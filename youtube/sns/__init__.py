@@ -1,0 +1,1 @@
+"""Local SNS analytics collectors."""
