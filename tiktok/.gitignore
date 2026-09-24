@@ -1,6 +1,3 @@
-# ログインセッション（Cookie等）。絶対にコミットしない。
-.auth/
-
 # ダウンロードしたCSVの実データ。手元にのみ置く。
 exports/*
 !exports/.gitkeep

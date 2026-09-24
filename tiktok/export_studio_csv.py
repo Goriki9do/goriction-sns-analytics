@@ -1,7 +1,13 @@
 """
-保存済みログインセッションを使って、TikTok StudioのAnalyticsからCSVを自動ダウンロードする。
+「自動化専用のブラウザ」を新しく起動するのではなく、あなたが普段使っている
+Edge（launch_edge_debug.batでリモート操作モードにしたもの）に接続して、
+TikTok Studioの分析画面からCSVをダウンロードする。
 
-事前に一度 login.py を実行してログインしておくこと。
+事前準備:
+    1. launch_edge_debug.bat を実行してEdgeをリモート操作モードで開く
+    2. そのEdgeでいつも通りTikTokにログインする（自動化はしない、人間が普通に操作する）
+    3. TikTok Studioの分析画面（Content）まで開いておく
+    4. このスクリプトを実行する
 
 使い方:
     python export_studio_csv.py
@@ -9,22 +15,17 @@
 注意:
     TikTok Studioの画面構成は予告なく変わることがある。ダウンロードボタンが
     見つからずに失敗した場合は、下記 DOWNLOAD_BUTTON_TEXT_CANDIDATES に
-    実際の画面のボタン文言を追加するか、--headed を付けて画面を見ながら
-    どこで止まっているか確認すること。
-
-    python export_studio_csv.py --headed
+    実際の画面のボタン文言を追加すること。
 """
 
-import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 
-AUTH_DIR = Path(__file__).parent / ".auth"
-STORAGE_STATE_PATH = AUTH_DIR / "tiktok_storage_state.json"
 EXPORTS_DIR = Path(__file__).parent / "exports"
+CDP_URL = "http://localhost:9222"
 
 ANALYTICS_CONTENT_URL = "https://www.tiktok.com/tiktokstudio/analytics/content"
 
@@ -36,27 +37,36 @@ DOWNLOAD_BUTTON_TEXT_CANDIDATES = [
 ]
 
 
-def run(headless: bool) -> Path:
-    if not STORAGE_STATE_PATH.exists():
-        print("ログインセッションが見つからんわ。先に `python login.py` を実行してな。")
-        sys.exit(1)
+def find_or_open_studio_page(context) -> "playwright.sync_api.Page":
+    for page in context.pages:
+        if "tiktokstudio/analytics" in page.url:
+            return page
 
+    page = context.new_page()
+    page.goto(ANALYTICS_CONTENT_URL)
+    return page
+
+
+def run() -> Path:
     EXPORTS_DIR.mkdir(exist_ok=True)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless)
-        context = browser.new_context(storage_state=str(STORAGE_STATE_PATH))
-        page = context.new_page()
-        page.goto(ANALYTICS_CONTENT_URL)
-
-        # セッション切れだとログイン画面にリダイレクトされる想定。
         try:
-            page.wait_for_url("**/login**", timeout=5000)
-            print("セッションが切れてるみたい。`python login.py` をもう一度実行してな。")
-            browser.close()
+            browser = p.chromium.connect_over_cdp(CDP_URL)
+        except Exception:
+            print(
+                "Edgeに接続できんかったわ。先に launch_edge_debug.bat を実行して、"
+                "Edgeをリモート操作モードで開いてからやり直してな。"
+            )
             sys.exit(1)
-        except PlaywrightTimeoutError:
-            pass  # ログイン画面に飛ばされなければ正常
+
+        context = browser.contexts[0]
+        page = find_or_open_studio_page(context)
+        page.bring_to_front()
+
+        if "login" in page.url:
+            print("ログインできてへんみたい。Edge側で先にTikTokにログインしてな。")
+            sys.exit(1)
 
         download_button = None
         for text in DOWNLOAD_BUTTON_TEXT_CANDIDATES:
@@ -73,7 +83,6 @@ def run(headless: bool) -> Path:
                 "ダウンロードボタンが見つからんかった。画面構成が変わってるかも。"
                 f"スクリーンショットを {debug_path} に保存したので確認してな。"
             )
-            browser.close()
             sys.exit(1)
 
         with page.expect_download() as download_info:
@@ -84,6 +93,7 @@ def run(headless: bool) -> Path:
         saved_path = EXPORTS_DIR / f"tiktok_studio_raw_{timestamp}.csv"
         download.save_as(str(saved_path))
 
+        # ブラウザ自体は閉じない（あなたが普段使ってるEdgeやから）。接続だけ切る。
         browser.close()
 
     print(f"保存したで: {saved_path}")
@@ -91,14 +101,7 @@ def run(headless: bool) -> Path:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--headed",
-        action="store_true",
-        help="ブラウザ画面を表示して実行する（デバッグ用）",
-    )
-    args = parser.parse_args()
-    run(headless=not args.headed)
+    run()
 
 
 if __name__ == "__main__":
