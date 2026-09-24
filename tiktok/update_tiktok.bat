@@ -1,7 +1,7 @@
 @echo off
-REM TikTok Studioでダウンロードした後、これをダブルクリックするだけでOK。
-REM 1. Downloadsフォルダのzipを展開してexports/inboxへコピー
-REM 2. inboxのCSVをexports配下の各csvに整理
+REM After downloading from TikTok Studio, just double-click this file.
+REM 1. Extract zip files from the Downloads folder into exports/inbox
+REM 2. Normalize the CSVs in exports/inbox into the exports/*.csv files
 
 cd /d "%~dp0"
 
