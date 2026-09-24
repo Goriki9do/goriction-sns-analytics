@@ -39,19 +39,28 @@ python -m venv .venv
 
 1. 普段どおりEdgeでTikTok Studio（studio.tiktok.com、またはアプリ内Analytics）を開く
 2. Analytics（Content / Overview / Followers / Viewers など各タブ）で期間を指定し、
-   「データをダウンロード」をクリック。ZIPでまとめてダウンロードされる場合は展開する
-3. 出てきたCSVファイル（`Content.csv`、`Overview.csv`、`FollowerHistory.csv` など）を
-   `tiktok/exports/inbox/` フォルダに置く（ファイル名はTikTokが付けたままでよい）
+   「データをダウンロード」をクリック。TikTok Studioの仕様でZIPファイルとして
+   `Downloads` フォルダに保存される
+3. ダウンロードしたZIPはそのままでよい（展開・移動は次のステップが自動でやる）
 
-### 3. 整理を実行
+### 3. 更新を実行
 
 ```
-.venv\Scripts\python normalize_export.py
+update_tiktok.bat
 ```
 
-`exports/inbox/` にある未処理のCSVをファイル名から種類判定し、それぞれ以下に
-正規化・追記する。処理済みファイルは `exports/processed/` に移動する。
-このスクリプトはTikTokには一切アクセスしない、純粋なローカルのファイル処理。
+をダブルクリックするだけでOK。内部では以下を順番に実行している。
+
+1. `import_downloads.py` — `Downloads` フォルダにある
+   `Content_*.zip` / `Overview_*.zip` / `Followers_*.zip` / `Viewers_*.zip` を探して展開し、
+   中のCSVを `exports/inbox/` にコピーする。処理済みのZIPは
+   `exports/downloads_processed/` に移動する（二重取り込み防止）。
+2. `normalize_export.py` — `exports/inbox/` にある未処理のCSVをファイル名から種類判定し、
+   それぞれ以下に正規化・追記する。処理済みファイルは `exports/processed/` に移動する。
+
+どちらのスクリプトもTikTokには一切アクセスしない、純粋なローカルのファイル処理。
+（コマンドプロンプトから個別に実行したい場合は `.venv\Scripts\python import_downloads.py`
+→ `.venv\Scripts\python normalize_export.py` の順に実行してもよい）
 
 | 入力ファイル | 出力先 | 内容 |
 |---|---|---|
@@ -74,7 +83,8 @@ python -m venv .venv
 
 ## 動作確認済み
 
-- 実際にTikTok Studioからダウンロードした `Content.csv`（動画15件）、`Overview.csv`
-  （日別7行）、`FollowerHistory.csv`（日別7行）で `normalize_export.py` の動作を確認済み。
+- 実際にTikTok Studioからダウンロードしたzip（`Content_goriction.zip` 等4件）で、
+  `import_downloads.py`（zip展開→CSVコピー、CSV7件）→ `normalize_export.py`
+  （動画15件・日別7行を取り込み）まで一気通貫で動作確認済み。
 - `FollowerGender.csv`、`FollowerTopTerritories.csv`、`Viewers.csv` は今回中身が空
   （データがまだ少ないアカウントのため）だったので、実データでの整理は未確認。

@@ -7,6 +7,9 @@ exports/inbox/*
 !exports/processed/
 exports/processed/*
 !exports/processed/.gitkeep
+!exports/downloads_processed/
+exports/downloads_processed/*
+!exports/downloads_processed/.gitkeep
 
 # ローカル設定
 .env
