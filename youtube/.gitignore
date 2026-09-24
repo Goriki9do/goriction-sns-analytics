@@ -2,6 +2,7 @@
 secrets/
 data/
 exports/
+exports_local/
 vendor/
 analysis-export/
 

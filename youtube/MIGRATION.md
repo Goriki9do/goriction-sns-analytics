@@ -11,3 +11,17 @@ Notionの記録上のオリジナルは
 
 使い方はこのフォルダ内の `README.md`（元プロジェクトのもの）・`SETUP.md`・`TEST_RESULTS.md`
 を参照。
+
+## exports_local/ について
+
+実データは `runtime.local.bat` の `SNS_DATA_HOME`（AppData配下）に保存される仕様のまま
+変更していない（歴史的にこのパスまわりで一度不具合が出ているため、触らずそのままにした）。
+見つけやすくするため、`sync_exports.py` を実行すると最新のCSVを `exports_local/` へ
+コピーしてくる（このフォルダもコミットしない。あくまでローカルの確認用コピー）。
+
+```
+python sync_exports.py
+```
+
+リポジトリ直下の `update_all.bat` を実行すると、TikTok更新→YouTube更新→この
+`exports_local/` へのコピーまで自動で行われる。
