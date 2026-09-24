@@ -43,10 +43,10 @@ def extract_csvs_from_zip(zip_path: Path) -> int:
             zf.extractall(tmp_dir)
 
         for csv_path in tmp_dir.rglob("*.csv"):
+            # TikTok Studioは毎回同じファイル名で保存するため、前回分（正常に処理
+            # されず残ったものも含む）があれば上書きする。別名で残すと同じ内容が
+            # 二重にnormalize_export.pyへ取り込まれてしまう。
             dest = INBOX_DIR / csv_path.name
-            if dest.exists():
-                # 同名ファイルがある場合は上書きせず、日時を付けて退避
-                dest = INBOX_DIR / f"{csv_path.stem}_{zip_path.stem}{csv_path.suffix}"
             dest.write_bytes(csv_path.read_bytes())
             count += 1
 
