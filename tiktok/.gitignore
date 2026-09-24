@@ -1,0 +1,12 @@
+# ログインセッション（Cookie等）。絶対にコミットしない。
+.auth/
+
+# ダウンロードしたCSVの実データ。手元にのみ置く。
+exports/*
+!exports/.gitkeep
+
+# ローカル設定
+.env
+config.local.py
+__pycache__/
+*.pyc
