@@ -1,10 +1,14 @@
 """
 Downloadsフォルダにある、TikTok StudioからダウンロードしたZIPファイルを探して
-展開し、中のCSVを exports/inbox/ にコピーする。TikTokには一切アクセスしない、
-ローカルのファイル操作のみ。
+展開し、中のCSV（またはExcel）を exports/inbox/ にCSVとしてコピーする。
+TikTokには一切アクセスしない、ローカルのファイル操作のみ。
 
 対象にするZIPファイル名（TikTok Studioのダウンロード時の命名規則）:
     Content_*.zip / Overview_*.zip / Followers_*.zip / Viewers_*.zip
+
+TikTok Studio側のダウンロード形式設定によって、ZIPの中身がCSVの場合と
+Excel（.xlsx）の場合がある。.xlsxの場合は読み込んで同名のCSVに変換して置く
+（後続のnormalize_export.pyはCSVしか見ないため）。
 
 使い方:
     python import_downloads.py                  # ~/Downloads を対象にする
@@ -18,6 +22,8 @@ import sys
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
+
+import pandas as pd
 
 EXPORTS_DIR = Path(__file__).parent / "exports"
 INBOX_DIR = EXPORTS_DIR / "inbox"
@@ -42,12 +48,18 @@ def extract_csvs_from_zip(zip_path: Path) -> int:
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(tmp_dir)
 
+        # TikTok Studioは毎回同じファイル名で保存するため、前回分（正常に処理
+        # されず残ったものも含む）があれば上書きする。別名で残すと同じ内容が
+        # 二重にnormalize_export.pyへ取り込まれてしまう。
         for csv_path in tmp_dir.rglob("*.csv"):
-            # TikTok Studioは毎回同じファイル名で保存するため、前回分（正常に処理
-            # されず残ったものも含む）があれば上書きする。別名で残すと同じ内容が
-            # 二重にnormalize_export.pyへ取り込まれてしまう。
             dest = INBOX_DIR / csv_path.name
             dest.write_bytes(csv_path.read_bytes())
+            count += 1
+
+        for xlsx_path in tmp_dir.rglob("*.xlsx"):
+            dest = INBOX_DIR / (xlsx_path.stem + ".csv")
+            df = pd.read_excel(xlsx_path)
+            df.to_csv(dest, index=False, encoding="utf-8-sig")
             count += 1
 
     return count

@@ -53,7 +53,9 @@ update_tiktok.bat
 
 1. `import_downloads.py` — `Downloads` フォルダにある
    `Content_*.zip` / `Overview_*.zip` / `Followers_*.zip` / `Viewers_*.zip` を探して展開し、
-   中のCSVを `exports/inbox/` にコピーする。処理済みのZIPは
+   中身を `exports/inbox/` にCSVとしてコピーする。TikTok Studioのダウンロード形式設定に
+   よってZIPの中身がCSVの場合とExcel（`.xlsx`）の場合があるが、`.xlsx`の場合は自動で
+   読み込んでCSVに変換するのでどちらでもよい。処理済みのZIPは
    `exports/downloads_processed/` に移動する（二重取り込み防止）。
 2. `normalize_export.py` — `exports/inbox/` にある未処理のCSVをファイル名から種類判定し、
    それぞれ以下に正規化・追記する。処理済みファイルは `exports/processed/` に移動する。
@@ -83,8 +85,8 @@ update_tiktok.bat
 
 ## 動作確認済み
 
-- 実際にTikTok Studioからダウンロードしたzip（`Content_goriction.zip` 等4件）で、
-  `import_downloads.py`（zip展開→CSVコピー、CSV7件）→ `normalize_export.py`
-  （動画15件・日別7行を取り込み）まで一気通貫で動作確認済み。
+- 実際にTikTok Studioからダウンロードしたzip（`Content_goriction.zip` 等4件、CSV形式・
+  Excel形式の両方）で、`import_downloads.py`（zip展開→CSV化、CSV7件）→
+  `normalize_export.py`（動画15件・日別7行を取り込み）まで一気通貫で動作確認済み。
 - `FollowerGender.csv`、`FollowerTopTerritories.csv`、`Viewers.csv` は今回中身が空
   （データがまだ少ないアカウントのため）だったので、実データでの整理は未確認。
