@@ -8,7 +8,7 @@ Downloadsフォルダにある、TikTok StudioからダウンロードしたZIP�
 
 使い方:
     python import_downloads.py                  # ~/Downloads を対象にする
-    python import_downloads.py D:\path\to\dir    # フォルダを指定する
+    python import_downloads.py D:/path/to/dir    # フォルダを指定する
 
 処理済みのZIPは exports/downloads_processed/ に移動する（二重取り込み防止）。
 """
