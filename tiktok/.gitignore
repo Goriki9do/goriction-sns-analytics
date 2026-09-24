@@ -1,6 +1,12 @@
 # ダウンロードしたCSVの実データ。手元にのみ置く。
 exports/*
 !exports/.gitkeep
+!exports/inbox/
+exports/inbox/*
+!exports/inbox/.gitkeep
+!exports/processed/
+exports/processed/*
+!exports/processed/.gitkeep
 
 # ローカル設定
 .env

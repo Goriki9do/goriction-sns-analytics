@@ -1,6 +1,11 @@
 """
-export_studio_csv.py が保存した生CSVを読み込み、他SNS（YouTube等）と並べやすい
+TikTok Studioから手動でダウンロードしたCSVを読み込み、他SNS（YouTube等）と並べやすい
 列名に正規化して exports/videos.csv に追記する。
+
+前提（このスクリプトはTikTokには一切アクセスしない。ローカルのファイル処理のみ）:
+    TikTok Studio（studio.tiktok.com、またはアプリ内Analytics）で
+    Analytics > Content を開き、「データをダウンロード」でCSVを保存したら、
+    そのファイルを exports/inbox/ フォルダに置く。
 
 重要:
     TikTok Studioのエクスポートにあるコメント数は「件数」であり、
@@ -9,21 +14,23 @@ export_studio_csv.py が保存した生CSVを読み込み、他SNS（YouTube等�
     TikTokの公式APIではユニーク投稿者数は取得できない（Research APIは研究者限定）。
 
 使い方:
-    python normalize_export.py                 # exports/内の最新の生CSVを使う
-    python normalize_export.py path/to/raw.csv  # ファイルを指定する
+    python normalize_export.py
+    exports/inbox/ にある未処理のCSVをすべて処理し、videos.csvに追記したうえで
+    exports/processed/ に移動する（二重取り込み防止）。
 """
 
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 
 EXPORTS_DIR = Path(__file__).parent / "exports"
+INBOX_DIR = EXPORTS_DIR / "inbox"
+PROCESSED_DIR = EXPORTS_DIR / "processed"
 NORMALIZED_PATH = EXPORTS_DIR / "videos.csv"
 
 # TikTok Studio側の列名は言語・仕様変更で揺れるため、複数候補から拾う。
-# 実際にダウンロードしたCSVを見て、ここに列名を足していくこと。
+# 実際にダウンロードしたCSVのヘッダーを見て、ここに列名を足していくこと。
 COLUMN_CANDIDATES = {
     "post_date": ["Post time", "投稿日時", "Post date"],
     "title": ["Video title", "動画タイトル", "Title"],
@@ -32,14 +39,6 @@ COLUMN_CANDIDATES = {
     "comment_count_raw": ["Comments", "コメント数"],
     "shares": ["Shares", "シェア数"],
 }
-
-
-def find_latest_raw_csv() -> Path:
-    candidates = sorted(EXPORTS_DIR.glob("tiktok_studio_raw_*.csv"))
-    if not candidates:
-        print("生CSVが exports/ に見つからんわ。先に export_studio_csv.py を実行してな。")
-        sys.exit(1)
-    return candidates[-1]
 
 
 def pick_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
@@ -59,7 +58,7 @@ def normalize(raw_path: Path) -> pd.DataFrame:
             normalized[target_col] = raw[source_col]
         else:
             normalized[target_col] = pd.NA
-            print(f"警告: 列 '{target_col}' に対応する列がCSVに見つからんかった（空欄で埋める）")
+            print(f"警告: 列 '{target_col}' に対応する列が {raw_path.name} に見つからんかった（空欄で埋める）")
 
     normalized["fetched_at"] = datetime.now(timezone.utc).isoformat()
     normalized["source_file"] = raw_path.name
@@ -69,17 +68,30 @@ def normalize(raw_path: Path) -> pd.DataFrame:
 
 
 def main() -> None:
-    raw_path = Path(sys.argv[1]) if len(sys.argv) > 1 else find_latest_raw_csv()
-    normalized = normalize(raw_path)
+    INBOX_DIR.mkdir(parents=True, exist_ok=True)
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+
+    raw_files = sorted(INBOX_DIR.glob("*.csv"))
+    if not raw_files:
+        print(f"{INBOX_DIR} に未処理のCSVが見つからんわ。")
+        print("TikTok Studioでダウンロードしたファイルをこのフォルダに置いてから実行してな。")
+        return
+
+    normalized_batches = [normalize(path) for path in raw_files]
+    new_rows = pd.concat(normalized_batches, ignore_index=True)
 
     if NORMALIZED_PATH.exists():
         existing = pd.read_csv(NORMALIZED_PATH)
-        combined = pd.concat([existing, normalized], ignore_index=True)
+        combined = pd.concat([existing, new_rows], ignore_index=True)
     else:
-        combined = normalized
+        combined = new_rows
 
     combined.to_csv(NORMALIZED_PATH, index=False, encoding="utf-8-sig")
-    print(f"追記したで: {NORMALIZED_PATH}（{len(normalized)}行追加）")
+    print(f"追記したで: {NORMALIZED_PATH}（{len(new_rows)}行追加、{len(raw_files)}ファイル分）")
+
+    for path in raw_files:
+        path.rename(PROCESSED_DIR / path.name)
+    print(f"処理済みのファイルは {PROCESSED_DIR} に移動したで。")
 
 
 if __name__ == "__main__":
