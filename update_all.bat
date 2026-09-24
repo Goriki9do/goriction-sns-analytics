@@ -2,6 +2,7 @@
 REM Updates TikTok first, then YouTube, in one go.
 REM Runs even if there is no new TikTok zip in Downloads (that step just skips).
 
+chcp 65001 >nul
 cd /d "%~dp0"
 
 echo === Updating TikTok ===
@@ -20,12 +21,28 @@ popd
 
 echo.
 echo === Updating YouTube ===
-if not exist youtube\run_youtube.bat (
-    echo youtube\run_youtube.bat not found. Has the YouTube project been moved here yet?
+if not exist youtube\run.py (
+    echo youtube\run.py not found. Has the YouTube project been moved here yet?
     goto :error
 )
 pushd youtube
-call run_youtube.bat
+REM Same steps as run_youtube.bat, but without its trailing pause, so this
+REM script can continue straight on to the exports_local copy step below.
+call bootstrap.bat
+if errorlevel 1 (
+    popd
+    goto :error
+)
+if not defined SNS_DATA_HOME set "SNS_DATA_HOME=%LOCALAPPDATA%\GorikushonSNS"
+set "PYTHONDONTWRITEBYTECODE=1"
+echo Gorikushon YouTube - launcher v0.1.4
+echo Data folder: "%SNS_DATA_HOME%"
+"%SNS_PYTHON%" -B -X utf8 run.py --allow-google-auth
+if errorlevel 1 (
+    echo Fetch failed. Please show the message above to Codex.
+    popd
+    goto :error
+)
 popd
 
 echo.
