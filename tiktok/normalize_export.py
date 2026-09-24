@@ -139,7 +139,7 @@ def main() -> None:
         file_type = detect_file_type(path.name)
         if file_type is None:
             print(f"{path.name} は未対応の種類やから、整理せずそのままprocessedへ移すで。")
-            path.rename(PROCESSED_DIR / path.name)
+            path.replace(PROCESSED_DIR / path.name)
             continue
 
         normalized = normalize(path, file_type)
@@ -149,7 +149,8 @@ def main() -> None:
             print(f"{path.name} -> {output_path.name} に{len(normalized)}行追加")
             processed_count += 1
 
-        path.rename(PROCESSED_DIR / path.name)
+        # 同名ファイルが前回分として残っていることがあるため上書きで移動する。
+        path.replace(PROCESSED_DIR / path.name)
 
     print(f"完了。{processed_count}ファイルを取り込んだで。処理済みは {PROCESSED_DIR} に移動した。")
 

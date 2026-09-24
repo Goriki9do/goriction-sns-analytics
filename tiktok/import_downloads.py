@@ -78,7 +78,8 @@ def main() -> None:
 
         print(f"{zip_path.name} -> CSV {n}件を exports/inbox/ にコピー")
         total_csv += n
-        zip_path.rename(DOWNLOADS_PROCESSED_DIR / zip_path.name)
+        # TikTok Studioは毎回同じファイル名で保存するため、前回分があれば上書きする。
+        zip_path.replace(DOWNLOADS_PROCESSED_DIR / zip_path.name)
 
     print(f"完了。zip {len(zip_files)}件からCSV {total_csv}件を取り込んだで。")
     print("次は normalize_export.py を実行してな。")
