@@ -1,0 +1,13 @@
+# 認証情報・実データ・依存ライブラリは絶対にコミットしない
+secrets/
+data/
+exports/
+vendor/
+analysis-export/
+
+# ローカル環境設定（Python本体のパスなど、PC固有）
+runtime.local.bat
+
+__pycache__/
+*.pyc
+.venv/
