@@ -38,9 +38,10 @@ python -m venv .venv
 ### 2. TikTok Studioで手動ダウンロード
 
 1. 普段どおりEdgeでTikTok Studio（studio.tiktok.com、またはアプリ内Analytics）を開く
-2. Analytics > Content で期間を指定し、「データをダウンロード」をクリック
-3. ダウンロードしたCSVファイルを `tiktok/exports/inbox/` フォルダに置く
-   （ファイル名はTikTokが付けたままでよい）
+2. Analytics（Content / Overview / Followers / Viewers など各タブ）で期間を指定し、
+   「データをダウンロード」をクリック。ZIPでまとめてダウンロードされる場合は展開する
+3. 出てきたCSVファイル（`Content.csv`、`Overview.csv`、`FollowerHistory.csv` など）を
+   `tiktok/exports/inbox/` フォルダに置く（ファイル名はTikTokが付けたままでよい）
 
 ### 3. 整理を実行
 
@@ -48,21 +49,32 @@ python -m venv .venv
 .venv\Scripts\python normalize_export.py
 ```
 
-`exports/inbox/` にある未処理のCSVをすべて `exports/videos.csv` に正規化・追記し、
-処理済みファイルは `exports/processed/` に移動する。このスクリプトはTikTokには
-一切アクセスしない、純粋なローカルのファイル処理。
+`exports/inbox/` にある未処理のCSVをファイル名から種類判定し、それぞれ以下に
+正規化・追記する。処理済みファイルは `exports/processed/` に移動する。
+このスクリプトはTikTokには一切アクセスしない、純粋なローカルのファイル処理。
+
+| 入力ファイル | 出力先 | 内容 |
+|---|---|---|
+| `Content*.csv` | `exports/videos.csv` | 動画ごとの一覧・累計値 |
+| `Overview*.csv` | `exports/channel_daily.csv` | チャンネル全体の日別値 |
+| `FollowerHistory*.csv` | `exports/follower_daily.csv` | フォロワー数の日別推移 |
+| `Viewers*.csv` | `exports/viewers_daily.csv` | 視聴者数の日別推移 |
+| 上記以外（`FollowerGender.csv`等） | 未対応（整理せずprocessedへ） | 今後必要になれば対応を追加 |
 
 ## 重要な注意
 
-- コメント数は「件数」であり、YouTube版の `unique_commenters`
-  （本人除外・返信込みのユニーク投稿者数）とは意味が異なる。
-  TikTokの公式APIではユニーク投稿者数は取得できない（Research APIは研究者限定）。
-  `videos.csv` の `unique_commenters` 列は常に空欄になる。
+- `videos.csv` の `comment_count_raw`（コメント数）は「件数」であり、YouTube版の
+  `unique_commenters`（本人除外・返信込みのユニーク投稿者数）とは意味が異なる。
+  TikTokの公式APIではユニーク投稿者数は取得できない（Research APIは研究者限定）ため、
+  `unique_commenters` 列は常に空欄になる。
+- 日付列（「9月16日」のような表記）には年が含まれない。年をまたいで蓄積する場合、
+  同じ月日が複数年分混在する可能性があるので注意する。
 - TikTok Studioの分析期間は最大60日までしか遡れない。定期的に手動ダウンロードして
   蓄積する運用が前提。
 
-## 未検証・要確認事項
+## 動作確認済み
 
-- `normalize_export.py` の列名候補（`COLUMN_CANDIDATES`）は、実際にダウンロードした
-  CSVのヘッダーを見て調整が必要。列が見つからない場合は警告を出して空欄で埋めるので、
-  実行結果を見て `normalize_export.py` 内の候補リストに実際の列名を追加すること。
+- 実際にTikTok Studioからダウンロードした `Content.csv`（動画15件）、`Overview.csv`
+  （日別7行）、`FollowerHistory.csv`（日別7行）で `normalize_export.py` の動作を確認済み。
+- `FollowerGender.csv`、`FollowerTopTerritories.csv`、`Viewers.csv` は今回中身が空
+  （データがまだ少ないアカウントのため）だったので、実データでの整理は未確認。
