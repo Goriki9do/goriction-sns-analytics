@@ -1,5 +1,5 @@
 @echo off
-REM Updates TikTok, YouTube, Instagram, then X, in one go.
+REM Updates TikTok, YouTube, Instagram, X, then rebuilds the combined Excel report.
 REM Runs even if there is no new TikTok zip in Downloads (that step just skips).
 
 chcp 65001 >nul
@@ -75,6 +75,20 @@ if not exist x\fetch.py (
 )
 pushd x
 .venv\Scripts\python fetch.py
+if errorlevel 1 (
+    popd
+    goto :error
+)
+popd
+
+echo.
+echo === Building combined report (report\goriction_sns_report.xlsx) ===
+if not exist report\build_report.py (
+    echo report\build_report.py not found.
+    goto :error
+)
+pushd report
+.venv\Scripts\python build_report.py
 if errorlevel 1 (
     popd
     goto :error

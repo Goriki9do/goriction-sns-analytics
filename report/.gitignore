@@ -1,0 +1,6 @@
+# 実データから生成されるレポートはコミットしない
+goriction_sns_report.xlsx
+
+__pycache__/
+*.pyc
+.venv/
