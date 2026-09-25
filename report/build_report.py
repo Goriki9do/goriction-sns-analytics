@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 from openpyxl.chart import BarChart, Reference
+from openpyxl.chart.label import DataLabelList
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
@@ -156,16 +157,41 @@ def autosize_columns(ws) -> None:
 
 def add_bar_chart(ws, summary_row_count: int, value_col: int, title: str, anchor: str) -> None:
     chart = BarChart()
+    chart.type = "col"
     chart.title = title
     chart.y_axis.title = None
     chart.x_axis.title = None
-    chart.legend = None
+    chart.x_axis.delete = False
+    chart.y_axis.delete = False
+    # カテゴリ(プラットフォーム)ごとに自動で色分けされるので、
+    # どれがどの色か分かるように凡例は残す
+    chart.legend.position = "b"
+
     data = Reference(ws, min_col=value_col, min_row=1, max_row=summary_row_count + 1)
     cats = Reference(ws, min_col=1, min_row=2, max_row=summary_row_count + 1)
     chart.add_data(data, titles_from_data=True)
     chart.set_categories(cats)
-    chart.height = 7
-    chart.width = 11
+
+    # 一番高いバーの数値ラベルがグラフタイトルと重ならないよう、上に余白を確保する
+    values = [
+        ws.cell(row=r, column=value_col).value
+        for r in range(2, summary_row_count + 2)
+    ]
+    values = [v for v in values if isinstance(v, (int, float))]
+    if values:
+        chart.y_axis.scaling.max = max(values) * 1.2
+
+    series = chart.series[0]
+    series.varyColors = True
+    series.dLbls = DataLabelList()
+    series.dLbls.showVal = True
+    series.dLbls.showCatName = False
+    series.dLbls.showSerName = False
+    series.dLbls.showLegendKey = False
+    series.dLbls.numFmt = "#,##0"
+
+    chart.height = 8
+    chart.width = 13
     ws.add_chart(chart, anchor)
 
 
@@ -211,9 +237,10 @@ def main() -> None:
         cell.font = Font(bold=True)
     autosize_columns(ws)
 
-    add_bar_chart(ws, len(summary), value_col=2, title="投稿数", anchor=f"A{len(summary) + len(notes) + 6}")
-    add_bar_chart(ws, len(summary), value_col=3, title="合計いいね", anchor=f"H{len(summary) + len(notes) + 6}")
-    add_bar_chart(ws, len(summary), value_col=4, title="合計再生/表示回数", anchor=f"O{len(summary) + len(notes) + 6}")
+    chart_start_row = len(summary) + len(notes) + 6
+    add_bar_chart(ws, len(summary), value_col=2, title="投稿数", anchor=f"A{chart_start_row}")
+    add_bar_chart(ws, len(summary), value_col=3, title="合計いいね", anchor=f"A{chart_start_row + 18}")
+    add_bar_chart(ws, len(summary), value_col=4, title="合計再生/表示回数", anchor=f"A{chart_start_row + 36}")
 
     for platform in ["YouTube", "TikTok", "Instagram", "X"]:
         if platform in wb.sheetnames:
