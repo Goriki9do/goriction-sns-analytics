@@ -1,5 +1,5 @@
 @echo off
-REM Updates TikTok, YouTube, then Instagram, in one go.
+REM Updates TikTok, YouTube, Instagram, then X, in one go.
 REM Runs even if there is no new TikTok zip in Downloads (that step just skips).
 
 chcp 65001 >nul
@@ -58,6 +58,22 @@ if not exist instagram\fetch.py (
     goto :error
 )
 pushd instagram
+.venv\Scripts\python fetch.py
+if errorlevel 1 (
+    popd
+    goto :error
+)
+popd
+
+echo.
+echo === Updating X ===
+REM First run needs a one-time browser authorization; later runs reuse the
+REM saved refresh token in x\secrets\token_cache.json without a browser step.
+if not exist x\fetch.py (
+    echo x\fetch.py not found.
+    goto :error
+)
+pushd x
 .venv\Scripts\python fetch.py
 if errorlevel 1 (
     popd
