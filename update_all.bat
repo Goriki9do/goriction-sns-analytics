@@ -1,5 +1,5 @@
 @echo off
-REM Updates TikTok first, then YouTube, in one go.
+REM Updates TikTok, YouTube, then Instagram, in one go.
 REM Runs even if there is no new TikTok zip in Downloads (that step just skips).
 
 chcp 65001 >nul
@@ -49,6 +49,20 @@ echo.
 echo === Copying YouTube exports into youtube\exports_local ===
 pushd youtube
 python sync_exports.py
+popd
+
+echo.
+echo === Updating Instagram ===
+if not exist instagram\fetch.py (
+    echo instagram\fetch.py not found.
+    goto :error
+)
+pushd instagram
+.venv\Scripts\python fetch.py
+if errorlevel 1 (
+    popd
+    goto :error
+)
 popd
 
 echo.
