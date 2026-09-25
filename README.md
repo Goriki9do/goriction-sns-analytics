@@ -14,15 +14,18 @@
 
 | SNS | 状態 | 備考 |
 |---|---|---|
-| YouTube | 実装済み（別環境で運用中） | Data API／Analytics APIで取得。詳細は運用者のNotion参照 |
-| TikTok | 検討中 | Display APIは自分の投稿の一覧・基本統計のみ取得可。コメントの人数集計は公式Research API（研究者限定）でしか提供されておらず利用不可。TikTok Studioからのブラウザ経由CSVエクスポート（手動ログイン＋自動ダウンロード）で補う方向を検討中 |
-| Instagram | 未着手 | Graph API利用はBusiness／Creatorアカウントが前提（個人アカウントは不可） |
-| X | 未着手 | 無料枠では分析用途がほぼ使えない見込み |
+| YouTube | 実装済み・実データ確認済み | Data API／Analytics APIで取得。`youtube/`ディレクトリ |
+| TikTok | 実装済み・実データ確認済み | 自動ログインはTikTok側にブロックされるため断念。TikTok Studioからの手動ダウンロード＋`update_tiktok.bat`での自動整理という方式を採用。コメント人数（`unique_commenters`）は公式APIでは取得不可なため空欄。`tiktok/`ディレクトリ |
+| Instagram | 実装済み・実データ確認済み | Graph API（Instagramログイン方式、Business／Creatorアカウント前提）で取得。`unique_commenters`集計に対応。`instagram/`ディレクトリ |
+| X | 実装済み・実データ確認済み | 2026年2月のプラン改定で無料/Basic/Proが廃止され、月額固定費なしの従量課金（pay-per-use）に変更。個人利用規模なら月数百円程度で運用可能。リプライ取得は標準アクセスだと直近7日のみという制約あり。`x/`ディレクトリ |
+
+各SNSの実装の経緯・詰まった点・検証結果は、運用者のNotion「ゴリクション自作SNS分析｜YouTube構築記録と他SNSへの展開手順」に記録。
 
 ## このリポジトリについて
 
-YouTube版は現在、運用者のローカル環境（Windows PC）で構築・運用されており、このリポジトリには
-まだコードを移していない。ここでは主にTikTok以降の新規SNS対応を実装していく。
+YouTube・TikTok・Instagram・Xの4SNSとも、このリポジトリ内（各SNS名のディレクトリ）で
+実装・運用している。認証情報・実データ（`secrets/`・`exports/`・`data/`等）はコミットせず、
+運用者のローカル環境にのみ保存する。
 
 ## 今後の実装方針（SNS追加時の共通ルール）
 
