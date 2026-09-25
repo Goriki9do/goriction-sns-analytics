@@ -1,10 +1,10 @@
 # 初回設定
 
-**保存フォルダーはruntime.local.batのSNS_DATA_HOMEで指定します。このPCでは `C:\Users\81801\AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\GorikushonSNS` です。** 以下のsecrets、vendorはこのフォルダー内を指します。open_data.batで開けます。Codexからの保存がWindowsによって専用領域に振り分けられたため、通常の起動でも読める実際のパスに統一しました。保護設定は変更していません。Codexをアンインストール・リセットする前にはこの保存フォルダーをバックアップしてください。
+**保存フォルダーはruntime.local.batのSNS_DATA_HOMEで指定します。このPCでは `C:\Users\81801\AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\GorictionSNS` です。** 以下のsecrets、vendorはこのフォルダー内を指します。open_data.batで開けます。Codexからの保存がWindowsによって専用領域に振り分けられたため、通常の起動でも読める実際のパスに統一しました。保護設定は変更していません。Codexをアンインストール・リセットする前にはこの保存フォルダーをバックアップしてください。
 
 1. Google Cloud Consoleで専用プロジェクトを作成。課金アカウントや無料トライアル登録は不要な構成です。もし請求登録を要求されたらそこで止めて確認してください。
 2. APIとサービス → ライブラリで **YouTube Data API v3** と **YouTube Analytics API** を有効化。
-3. Google Auth Platformのブランディングを設定。名前はGorikushon SNS Analytics、連絡先は自分のメール。
+3. Google Auth Platformのブランディングを設定。名前はGoriction SNS Analytics、連絡先は自分のメール。
 4. 個人Googleアカウントなら対象はExternalを選び、公開ステータスはTestingのまま。Externalという対象種別はアプリ一般公開とは別です。Test usersに自分だけを登録。Publish appは押しません。
 5. データアクセスは `youtube.readonly`、`yt-analytics.readonly`、`youtube.force-ssl`。コメント一覧のOAuth取得にはforce-sslが必要で、動画・評価・コメント・字幕の編集と削除も含む広い権限です。2026-09-24にユーザー承認を得て追加しました。プログラムが使うAPIは取得のみです。
 6. OAuthクライアントを **デスクトップアプリ** として作成。ダウンロードしたJSONを保存フォルダーの `secrets/client_secret.json` に保存。JSONをチャットに貼らないでください。

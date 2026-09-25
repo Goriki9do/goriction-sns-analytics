@@ -33,9 +33,9 @@ if errorlevel 1 (
     popd
     goto :error
 )
-if not defined SNS_DATA_HOME set "SNS_DATA_HOME=%LOCALAPPDATA%\GorikushonSNS"
+if not defined SNS_DATA_HOME set "SNS_DATA_HOME=%LOCALAPPDATA%\GorictionSNS"
 set "PYTHONDONTWRITEBYTECODE=1"
-echo Gorikushon YouTube - launcher v0.1.4
+echo Goriction YouTube - launcher v0.1.4
 echo Data folder: "%SNS_DATA_HOME%"
 "%SNS_PYTHON%" -B -X utf8 run.py --allow-google-auth
 if errorlevel 1 (

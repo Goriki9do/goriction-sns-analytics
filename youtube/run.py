@@ -6,9 +6,9 @@ from datetime import datetime, timedelta, date, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-DEFAULT_HOME = Path(os.environ['LOCALAPPDATA']) / 'GorikushonSNS' if sys.platform == 'win32' else Path(__file__).resolve().parent
+DEFAULT_HOME = Path(os.environ['LOCALAPPDATA']) / 'GorictionSNS' if sys.platform == 'win32' else Path(__file__).resolve().parent
 if sys.platform == 'win32':
-    packaged_home = Path(os.environ['LOCALAPPDATA']) / 'Packages/OpenAI.Codex_2p2nqsd0c76g0/LocalCache/Local/GorikushonSNS'
+    packaged_home = Path(os.environ['LOCALAPPDATA']) / 'Packages/OpenAI.Codex_2p2nqsd0c76g0/LocalCache/Local/GorictionSNS'
     if (packaged_home / 'secrets/client_secret.json').is_file():
         DEFAULT_HOME = packaged_home
 APP_HOME = Path(os.environ.get('SNS_DATA_HOME', str(DEFAULT_HOME)))

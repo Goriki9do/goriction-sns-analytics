@@ -2,7 +2,7 @@
 
 YouTube公式API → このPCのSQLite・CSV。Python 3.12以上。投稿・削除・公開設定の変更は行いません。
 
-**このPCの実データ保存先は `C:\Users\81801\AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\GorikushonSNS`（open_data.batで開く）です。以下のdata/exports/secrets/config.jsonはすべてこの保存先を基準にしています。** Codexからの保存がWindowsによって専用領域に振り分けられていたため、通常起動でも同じ実体を使えるようruntime.local.batに実際のパスを指定しています。Codexをアンインストール・リセットする前には、このフォルダーをローカルでバックアップしてください。
+**このPCの実データ保存先は `C:\Users\81801\AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\GorictionSNS`（open_data.batで開く）です。以下のdata/exports/secrets/config.jsonはすべてこの保存先を基準にしています。** Codexからの保存がWindowsによって専用領域に振り分けられていたため、通常起動でも同じ実体を使えるようruntime.local.batに実際のパスを指定しています。Codexをアンインストール・リセットする前には、このフォルダーをローカルでバックアップしてください。
 
 ## 実行
 
