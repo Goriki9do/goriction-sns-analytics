@@ -1,0 +1,10 @@
+# 認証情報は絶対にコミットしない
+secrets/
+
+# 実データ
+exports/*
+!exports/.gitkeep
+
+__pycache__/
+*.pyc
+.venv/
