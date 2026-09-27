@@ -37,6 +37,7 @@ PROCESSED_DIR = EXPORTS_DIR / "processed"
 FILE_TYPES = {
     "Content": {
         "output": "videos.csv",
+        "key_column": "video_url",
         "columns": {
             "Video link": "video_url",
             "Video title": "title",
@@ -50,6 +51,7 @@ FILE_TYPES = {
     },
     "Overview": {
         "output": "channel_daily.csv",
+        "key_column": "date",
         "columns": {
             "Date": "date",
             "Video Views": "views",
@@ -61,6 +63,7 @@ FILE_TYPES = {
     },
     "FollowerHistory": {
         "output": "follower_daily.csv",
+        "key_column": "date",
         "columns": {
             "Date": "date",
             "Followers": "followers",
@@ -69,6 +72,7 @@ FILE_TYPES = {
     },
     "Viewers": {
         "output": "viewers_daily.csv",
+        "key_column": "date",
         "columns": {
             "Date": "date",
             "Total Viewers": "total_viewers",
@@ -115,12 +119,17 @@ def normalize(raw_path: Path, file_type: str) -> pd.DataFrame | None:
     return normalized
 
 
-def append_csv(output_path: Path, new_rows: pd.DataFrame) -> None:
+def append_csv(output_path: Path, new_rows: pd.DataFrame, key_column: str) -> None:
+    """同じキー(video_url/date)の行は、後から取り込んだ方(new_rows)で上書きする。
+    TikTok Studioの再ダウンロードで同じ日付・同じ動画が何度も来るため、
+    キーで重複排除しないとexportsファイルが実行のたびに膨らんでしまう。"""
     if output_path.exists():
         existing = pd.read_csv(output_path)
         combined = pd.concat([existing, new_rows], ignore_index=True)
     else:
         combined = new_rows
+    if key_column in combined.columns:
+        combined = combined.drop_duplicates(subset=key_column, keep="last")
     combined.to_csv(output_path, index=False, encoding="utf-8-sig")
 
 
@@ -145,7 +154,7 @@ def main() -> None:
         normalized = normalize(path, file_type)
         if normalized is not None:
             output_path = EXPORTS_DIR / FILE_TYPES[file_type]["output"]
-            append_csv(output_path, normalized)
+            append_csv(output_path, normalized, FILE_TYPES[file_type]["key_column"])
             print(f"{path.name} -> {output_path.name} に{len(normalized)}行追加")
             processed_count += 1
 
