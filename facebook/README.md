@@ -55,14 +55,20 @@ update_facebook.bat
 - 2026年にFacebook Insightsの指標が大きく変更されており、`page_impressions`・`post_impressions`等の古い指標名は使っていない（廃止済み）。現行の指標名（`page_follows`・`post_video_avg_time_watched`等）を使用しているが、Meta側の仕様変更で今後も名前が変わる可能性がある。
 - `secrets/`以下（App ID・Secret・token_cache.json）は絶対にコミットしない（`.gitignore`で除外済み）。
 
-## 未検証・要確認事項（重要）
+## 実データでの検証結果（2026-09-27、実機）
 
-このスクリプトは実際のAPIレスポンスで動作確認できていない。他SNS版と同じく、
-実際に実行してエラーが出たら、その内容を元に修正する前提。特に以下が不明:
+ページ「ゴリクション goriction」（page_id: 1403366112859905）で実行しエラーなく完走。
 
-- Meta Developer App側の設定（Facebookログイン製品の追加、テスター登録）が実際にこれで足りるか
-- `video_reels`エッジが今のページで使えるか（使えなければ`videos`エッジにフォールバックする実装にしている）
-- `video_insights`の各指標が、このページ規模で実際に返ってくるか
-- ページ全体Insightsが100いいね未満でも一部だけ取得できるか、完全に不可か
+- 投稿2件（Reel 1件・写真投稿1件）、Reel 1件を取得
+- **`video_insights`は7指標中6指標が値を取得できた**：`blue_reels_play_count`（再生数182）・`fb_reels_replay_count`（リプレイ数6）・`post_video_avg_time_watched`（平均視聴時間2908ミリ秒）・`post_video_retention_graph`（区間ごとのリテンション率、`reel_retention.json`に保存）・`post_video_social_actions`・`post_video_followers`
+  - `total_video_view_total_time`だけHTTP 200だが中身が空(`{"data": []}`)。この指標はReelではなく通常動画向けの可能性が高い（Reel向けの総視聴時間を取りたい場合は別の指標を要調査）
+  - **ページ規模の下限が無いという想定通り、100いいね未満でもvideo_insightsは機能した**
+- **ページ全体Insights（`page_follows`・`page_views_total`・`page_post_engagements`）も、エラーにはならず200 OKで返ってきた。** ただし値はいずれも0。ページが実際に0人フォロワー相当なのか、データ量不足でAPIが黙って0を返しているのかは、フォロワーが増えてから再実行して切り分ける必要がある（「100いいね未満は失敗する」という事前の想定ほど単純ではなさそう）
+
+## 未検証・要確認事項
+
+- ページ全体Insightsの値が「本当の0」か「データ不足による黙示的な0」かの切り分け（フォロワー増加後に再検証）
+- Reel向けの総視聴時間に相当する正しい指標名の調査（`total_video_view_total_time`はReelでは空だった）
+- 投稿・Reelsが増えた場合のページング動作
 
 `update_facebook.bat`を実行してエラーが出たら、そのエラーメッセージを教えてもらえれば修正する。

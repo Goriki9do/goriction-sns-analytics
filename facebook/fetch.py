@@ -193,18 +193,27 @@ def main() -> None:
     # 3) Reelsのvideo_insightsを指標ごとにテスト(このページ規模で何が取れるか確認)
     reel_snapshot_rows = []
     retention_by_reel = {}
+    # 200 OKだが値がある/無い(Reel向けではない指標の可能性)を区別して記録する
     metric_availability: dict[str, int] = {m: 0 for m in REEL_METRICS}
+    metric_empty: dict[str, int] = {m: 0 for m in REEL_METRICS}
     for reel in reels:
         results = test_reel_metrics(reel["id"], token)
         row = {"date": fetched_at, "reel_id": reel["id"]}
         for metric, result in results.items():
             if result["ok"]:
-                metric_availability[metric] += 1
                 values = result["data"]
                 if metric == "post_video_retention_graph":
-                    retention_by_reel[reel["id"]] = values
+                    if values:
+                        retention_by_reel[reel["id"]] = values
+                        metric_availability[metric] += 1
+                    else:
+                        metric_empty[metric] += 1
                 elif values and "values" in values[0] and values[0]["values"]:
                     row[metric] = values[0]["values"][0].get("value")
+                    metric_availability[metric] += 1
+                else:
+                    row[f"{metric}_empty"] = True
+                    metric_empty[metric] += 1
             else:
                 row[f"{metric}_error"] = result["error"][:200]
         reel_snapshot_rows.append(row)
@@ -215,8 +224,11 @@ def main() -> None:
     )
 
     print("\n=== video_insights 指標ごとの取得可否(このページ規模での実測) ===")
-    for metric, ok_count in metric_availability.items():
-        print(f"  {metric}: {ok_count}/{len(reels)} 件で取得成功")
+    for metric in REEL_METRICS:
+        ok_count = metric_availability[metric]
+        empty_count = metric_empty[metric]
+        note = f"(うち{empty_count}件は200 OKだが値が空。Reel向けでない指標の可能性)" if empty_count else ""
+        print(f"  {metric}: {ok_count}/{len(reels)} 件で値を取得 {note}")
 
     # 4) ページ全体Insightsも試す(100いいね未満だと失敗する可能性が高い)
     print("\n=== ページ全体Insightsのテスト ===")
