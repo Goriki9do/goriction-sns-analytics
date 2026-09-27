@@ -22,7 +22,8 @@ exports/ 配下の集計用CSVに追記する。
     exports/processed/ に移動する（二重取り込み防止）。
 """
 
-from datetime import datetime, timezone
+import re
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -30,6 +31,44 @@ import pandas as pd
 EXPORTS_DIR = Path(__file__).parent / "exports"
 INBOX_DIR = EXPORTS_DIR / "inbox"
 PROCESSED_DIR = EXPORTS_DIR / "processed"
+JST = timezone(timedelta(hours=9))
+TEXT_COLUMNS = {"date", "post_date", "video_url", "title"}
+
+
+def _month_day(value) -> tuple[int, int] | None:
+    m = re.match(r"(\d+)月(\d+)日", str(value))
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def infer_daily_iso_dates(values: pd.Series, anchor: date) -> list[str | None]:
+    """日別CSVの「9月16日」(年なし)に年を補って「2026-09-16」にする。
+    TikTok Studioの日別データは古い順に1日ずつ連続で並び、最後の行が
+    ダウンロード時点以前の最新日という前提で、後ろから遡りながら
+    月日が増えたところ(=年をまたいだところ)で年を1つ戻す。"""
+    result: list[str | None] = [None] * len(values)
+    year = None
+    later = None
+    for i in range(len(values) - 1, -1, -1):
+        md = _month_day(values.iloc[i])
+        if md is None:
+            continue
+        if year is None:
+            year = anchor.year if md <= (anchor.month, anchor.day) else anchor.year - 1
+        elif md > later:
+            year -= 1
+        result[i] = f"{year:04d}-{md[0]:02d}-{md[1]:02d}"
+        later = md
+    return result
+
+
+def infer_post_iso_date(value, anchor: date) -> str | None:
+    """動画一覧の投稿日(年なし)に年を補う。TikTok Studioは最大365日までしか
+    遡れないので、ダウンロード日以前で最も近い日付と解釈すれば確定できる。"""
+    md = _month_day(value)
+    if md is None:
+        return None
+    year = anchor.year if md <= (anchor.month, anchor.day) else anchor.year - 1
+    return f"{year:04d}-{md[0]:02d}-{md[1]:02d}"
 
 # ファイル名の先頭部分 -> (出力先CSV, 列のリネーム対応表)
 # TikTok Studio側の列名は言語・仕様変更で変わりうるため、
@@ -51,7 +90,7 @@ FILE_TYPES = {
     },
     "Overview": {
         "output": "channel_daily.csv",
-        "key_column": "date",
+        "key_column": "date_iso",
         "columns": {
             "Date": "date",
             "Video Views": "views",
@@ -63,7 +102,7 @@ FILE_TYPES = {
     },
     "FollowerHistory": {
         "output": "follower_daily.csv",
-        "key_column": "date",
+        "key_column": "date_iso",
         "columns": {
             "Date": "date",
             "Followers": "followers",
@@ -72,7 +111,7 @@ FILE_TYPES = {
     },
     "Viewers": {
         "output": "viewers_daily.csv",
-        "key_column": "date",
+        "key_column": "date_iso",
         "columns": {
             "Date": "date",
             "Total Viewers": "total_viewers",
@@ -112,6 +151,20 @@ def normalize(raw_path: Path, file_type: str) -> pd.DataFrame | None:
 
     for target_col, value in spec.get("extra_columns", {}).items():
         normalized[target_col] = value
+
+    # TikTok Studioは、データが無い日や集計待ちの日を0ではなく"undefined"という
+    # 文字列で書き出すことがある(Viewers.csvで確認)。0とは意味が違うので欠損にする。
+    for target_col in spec["columns"].values():
+        if target_col not in TEXT_COLUMNS:
+            normalized[target_col] = pd.to_numeric(normalized[target_col], errors="coerce")
+
+    # 年なしの日付に年を補う。重複排除のキーにもなるので、年をまたいでも
+    # 「2025年9月25日」が「2026年9月25日」に上書きされることがない。
+    anchor = datetime.now(JST).date()
+    if "date" in normalized.columns:
+        normalized["date_iso"] = infer_daily_iso_dates(normalized["date"], anchor)
+    if "post_date" in normalized.columns:
+        normalized["post_date_iso"] = [infer_post_iso_date(v, anchor) for v in normalized["post_date"]]
 
     normalized["fetched_at"] = datetime.now(timezone.utc).isoformat()
     normalized["source_file"] = raw_path.name

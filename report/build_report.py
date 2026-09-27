@@ -107,7 +107,7 @@ PLATFORM_SPECS = [
         "表示回数・リーチ": "再生数(views)のみ取得可。",
         "自動化レベル": "半自動。TikTok側が自動化ブラウザを検知してブロックするため、TikTok Studioでの手動ダウンロードは人間が行う必要がある。その後のZIP展開・CSV整理は自動。",
         "料金": "無料。",
-        "特記事項": "投稿日に年情報が無い(「9月16日」形式)。年を跨ぐ蓄積で誤認しないよう注意。",
+        "特記事項": "TikTok Studioの日付に年情報が無い(「9月16日」形式)。取り込み時にダウンロード日から年を推定して補い(date_iso/post_date_iso列)、それを重複排除のキーにしている。データはダウンロード日の2〜3日前までしか反映されない。",
     },
     {
         "プラットフォーム": "Instagram",
@@ -210,13 +210,17 @@ def load_tiktok() -> pd.DataFrame:
     df = pd.read_csv(path)
     # 同じ動画が複数回fetchされていることがあるので、video_urlで最新のfetched_atだけ残す
     df = df.sort_values("fetched_at").drop_duplicates(subset="video_url", keep="last")
-    sort_key = df["post_date"].apply(tiktok_sort_key)
+    if "post_date_iso" in df.columns:
+        # normalize_export.pyが取り込み時に年を補った日付(ダウンロード日から推定)
+        sort_key = pd.to_datetime(df["post_date_iso"], errors="coerce")
+        posted_at = sort_key
+    else:
+        sort_key = df["post_date"].apply(tiktok_sort_key)
+        posted_at = df["post_date"].astype(str) + "(年不明)"
     out = pd.DataFrame(
         {
             "platform": "TikTok",
-            # TikTok Studioの日付表示には年が含まれない(例:「9月19日」)。
-            # 年を跨ぐ蓄積時に誤認しないよう、表示用の値は日付として解釈せず文字列のまま保持する。
-            "posted_at": df["post_date"].astype(str) + "(年不明)",
+            "posted_at": posted_at,
             "label": make_label(df["post_date"], df["title"]),
             "caption": df["title"],
             "likes": df["likes"],
@@ -621,7 +625,7 @@ def main() -> None:
                 "注意点": [
                     "Instagramは現状いいね・コメント数のみ取得。表示回数/リーチ(インサイト)は未実装。",
                     "Xのリプライ取得は直近7日以内が対象。7日より前の投稿はunique_commentersが過小(0)になりうる。",
-                    "TikTokの投稿日は年情報が無いため文字列のまま保持している(年跨ぎで誤認しないよう注意)。",
+                    "TikTok Studioの日付には年が無いため、取り込み時にダウンロード日から年を推定して補っている(365日以内のデータなので一意に決まる)。",
                     "YouTube/TikTokの再生回数とXのインプレッション(表示回数)は測定定義が異なる目安値。",
                     "Facebookは通常投稿に表示回数が無く、Reel投稿のみvideo_insightsの再生数(blue_reels_play_count)を表示回数欄に入れている。unique_commentersは未実装(常に空欄)。",
                     "このExcelはfetch時点のスナップショット。日々の推移を追うには過去分を別途残す必要がある。",
