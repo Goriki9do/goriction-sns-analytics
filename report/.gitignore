@@ -1,6 +1,7 @@
 # 実データから生成されるレポートはコミットしない
 goriction_sns_report.xlsx
 ~$goriction_sns_report.xlsx
+suggested_songs.json
 
 __pycache__/
 *.pyc

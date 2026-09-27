@@ -28,7 +28,7 @@ if not exist youtube\run.py (
 pushd youtube
 REM Same steps as run_youtube.bat, but without its trailing pause, so this
 REM script can continue straight on to the exports_local copy step below.
-call bootstrap.bat
+call .\bootstrap.bat
 if errorlevel 1 (
     popd
     goto :error

@@ -13,6 +13,7 @@ Excel起動時のマクロ有効化の警告も出ない。
     python build_report.py
 """
 
+import json
 import re
 import sys
 from copy import copy
@@ -33,6 +34,9 @@ OUTPUT_PATH = Path(__file__).parent / "goriction_sns_report.xlsx"
 # ここは他のシートと違い、実行するたびに作り直さず「手動入力を保持する」シート。
 # 曲ごとの難易度をユーザーが手で評価して残しておくためのもの。
 DIFFICULTY_SHEET_NAME = "難易度評価"
+# 一度でも自動提案した曲名の記録。ユーザーが行を削除・改名しても、
+# 同じハッシュタグ由来の曲名を次回以降に復活させないために使う。
+SUGGESTED_SONGS_PATH = Path(__file__).parent / "suggested_songs.json"
 DIFFICULTY_COLUMNS = ["曲名", "アーティスト", "感情", "高音", "音程", "テクニック", "平均", "メモ"]
 
 # 「歌ってみた」投稿のハッシュタグから曲名・アーティストを推測するための
@@ -443,10 +447,20 @@ def restore_difficulty_sheet(wb, snapshot: dict | None, song_candidates: list[tu
         }
         next_row = len(snapshot["cells"]) + 1
 
-    # ハッシュタグから拾った新曲だけ追加する(評価欄は空欄のまま=未評価として残す)
+    # ハッシュタグから拾った新曲だけ追加する(評価欄は空欄のまま=未評価として残す)。
+    # 過去に一度提案した曲は、ユーザーが削除・改名していても再追加しない。
+    if SUGGESTED_SONGS_PATH.exists():
+        suggested = set(json.loads(SUGGESTED_SONGS_PATH.read_text(encoding="utf-8")))
+    elif snapshot is not None:
+        # 記録ファイル導入前から手入力されているシートの場合、現時点の候補はすべて
+        # 「提案済み」とみなす(既に削除・改名された曲を復活させないため)。
+        suggested = {song for song, _ in song_candidates}
+    else:
+        suggested = set()
+
     added = 0
     for song, artist in song_candidates:
-        if song in existing_songs:
+        if song in existing_songs or song in suggested:
             continue
         ws.cell(row=next_row, column=1, value=song)
         ws.cell(row=next_row, column=2, value=artist)
@@ -455,6 +469,10 @@ def restore_difficulty_sheet(wb, snapshot: dict | None, song_candidates: list[tu
         added += 1
     if added:
         print(f"{DIFFICULTY_SHEET_NAME}シートに新曲を{added}件追加したで(評価はまだ未入力)。")
+    suggested |= {song for song, _ in song_candidates}
+    SUGGESTED_SONGS_PATH.write_text(
+        json.dumps(sorted(suggested), ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     if snapshot is None:
         # 初回のみ、書式の参考になる記入例を1行入れる
