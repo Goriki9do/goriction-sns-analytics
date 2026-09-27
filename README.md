@@ -18,12 +18,13 @@
 | TikTok | 実装済み・実データ確認済み | 自動ログインはTikTok側にブロックされるため断念。TikTok Studioからの手動ダウンロード＋`update_tiktok.bat`での自動整理という方式を採用。コメント人数（`unique_commenters`）は公式APIでは取得不可なため空欄。`tiktok/`ディレクトリ |
 | Instagram | 実装済み・実データ確認済み | Graph API（Instagramログイン方式、Business／Creatorアカウント前提）で取得。`unique_commenters`集計に対応。`instagram/`ディレクトリ |
 | X | 実装済み・実データ確認済み | 2026年2月のプラン改定で無料/Basic/Proが廃止され、月額固定費なしの従量課金（pay-per-use）に変更。個人利用規模なら月数百円程度で運用可能。リプライ取得は標準アクセスだと直近7日のみという制約あり。`x/`ディレクトリ |
+| Facebook | 実装済み・実データ確認済み | Meta Graph API v26.0で投稿・Reels一覧、Reelのvideo_insights（再生数・視聴時間・リテンション等）を取得。100いいね未満のページでもvideo_insightsは取得できた（想定していた制約には該当せず）。ページ全体Insightsは200 OKで返るが値が0（データ不足による黙示的な0か本当の0かは未確定）。`facebook/`ディレクトリ |
 
 各SNSの実装の経緯・詰まった点・検証結果は、運用者のNotion「ゴリクション自作SNS分析｜YouTube構築記録と他SNSへの展開手順」に記録。
 
 ## このリポジトリについて
 
-YouTube・TikTok・Instagram・Xの4SNSとも、このリポジトリ内（各SNS名のディレクトリ）で
+YouTube・TikTok・Instagram・X・Facebookの5SNSとも、このリポジトリ内（各SNS名のディレクトリ）で
 実装・運用している。認証情報・実データ（`secrets/`・`exports/`・`data/`等）はコミットせず、
 運用者のローカル環境にのみ保存する。
 
