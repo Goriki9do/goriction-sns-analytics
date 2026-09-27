@@ -17,11 +17,62 @@ from pathlib import Path
 import pandas as pd
 from openpyxl.chart import BarChart, Reference
 from openpyxl.chart.label import DataLabelList
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 
 ROOT = Path(__file__).parent.parent
 OUTPUT_PATH = Path(__file__).parent / "goriction_sns_report.xlsx"
+
+# 各SNSのREADME・Notion引き継ぎ資料に書かれている制約を集約した一覧。
+# 実装したfetchスクリプトの挙動から分かっている内容を手書きでまとめたもの
+# (CSVから自動集計した数値ではない)。仕様変更に気づいたら都度更新する。
+PLATFORM_SPECS = [
+    {
+        "プラットフォーム": "YouTube",
+        "データ取得範囲・遡れる期間": "無期限に遡って取得可能(--full-refreshで任意期間の再取得も可)。標準の初回取得範囲は90日前〜3日前。API日付は米国太平洋時間。集計遅れのため直近3日は未確定の場合がある。",
+        "コメント人数(unique_commenters)": "対応。安定したYouTubeチャンネルIDで重複排除・本人除外。5SNS中もっとも精度が高い。",
+        "表示回数・リーチ": "views(累計)とengagedViews(Analytics期間値)は定義が別。動画別合計とチャンネル全体日別値も別集計。",
+        "自動化レベル": "完全自動(OAuth一度で以後は再実行のみ)。",
+        "料金": "無料(YouTube Data API/Analytics APIの無料枠内)。",
+        "特記事項": "Shorts判定はcreatorContentTypeをそのまま保存。",
+    },
+    {
+        "プラットフォーム": "TikTok",
+        "データ取得範囲・遡れる期間": "TikTok Studioの分析画面が最大60日までしか遡れない。60日を過ぎると二度と取得できないため、定期的な手動ダウンロードでの蓄積が前提。",
+        "コメント人数(unique_commenters)": "取得不可。公式APIには無く、常に空欄(comment_count_rawの件数のみ)。",
+        "表示回数・リーチ": "再生数(views)のみ取得可。",
+        "自動化レベル": "半自動。TikTok側が自動化ブラウザを検知してブロックするため、TikTok Studioでの手動ダウンロードは人間が行う必要がある。その後のZIP展開・CSV整理は自動。",
+        "料金": "無料。",
+        "特記事項": "投稿日に年情報が無い(「9月16日」形式)。年を跨ぐ蓄積で誤認しないよう注意。",
+    },
+    {
+        "プラットフォーム": "Instagram",
+        "データ取得範囲・遡れる期間": "明確な期間制限の記載なし(全件ページング取得)。",
+        "コメント人数(unique_commenters)": "対応。ただし識別キーはusername(ユーザー名変更で別人扱いになるリスクあり、YouTubeほど安定していない)。",
+        "表示回数・リーチ": "未実装。いいね・コメント数のみで、表示回数/リーチ(インサイト)は取得していない。",
+        "自動化レベル": "完全自動(トークンキャッシュ)。ただしMeta開発者アカウントが「不審なアクティビティ」で一時ブロックされることがあり(2026-09-27に実際発生)、その間はFacebook連携も含め全機能が止まる。",
+        "料金": "無料。",
+        "特記事項": "Business/Creatorアカウントが前提(個人アカウント不可)。",
+    },
+    {
+        "プラットフォーム": "X",
+        "データ取得範囲・遡れる期間": "投稿一覧自体は無期限に遡れるが、**リプライの取得は直近7日以内のみ**(search/recentエンドポイントの制約)。7日より前の投稿はunique_commentersが実際より少なく(0に)なる。",
+        "コメント人数(unique_commenters)": "対応。識別キーはusername(Instagramと同じ制約)。7日制約の影響を受ける。",
+        "表示回数・リーチ": "impression_count(表示回数)。YouTube/TikTokの「再生回数」とは測定定義が異なる目安値。",
+        "自動化レベル": "完全自動(refresh_tokenで以後ブラウザ操作不要)。",
+        "料金": "**従量課金(pay-per-use)。無料枠なし。** 自分のデータの読み取りは1件$0.001、他人の投稿(リプライ等)の読み取りは1件$0.005。このアカウント規模なら月数十〜数百円程度。",
+        "特記事項": "2026年2月にプラン体系が刷新された(旧Basic/Pro廃止)。",
+    },
+    {
+        "プラットフォーム": "Facebook",
+        "データ取得範囲・遡れる期間": "video_insightsは基本lifetime(通算)値。ページ全体Insightsはperiod=dayで日次取得を試みるが値は要検証(下記参照)。",
+        "コメント人数(unique_commenters)": "未実装。reactions/comments件数のみで、常に空欄。",
+        "表示回数・リーチ": "Reel投稿のみvideo_insightsの再生数(blue_reels_play_count)を取得。通常投稿(写真等)は表示回数に相当する値が無い。ページ全体Insightsは200 OKで返るが値が常に0(データ不足による黙示的な0か本当の0かは未確定)。",
+        "自動化レベル": "完全自動(長期トークンで以後ブラウザ操作不要)。ただしInstagramと同じMeta開発者アカウントを使うため、アカウント単位のブロックの影響を受ける。",
+        "料金": "無料。",
+        "特記事項": "100いいね未満のページでもvideo_insights(Reel単体)は機能した。事前に懸念していた「100いいね未満は失敗する」制約は、少なくともReelには該当しなかった。",
+    },
+]
 
 
 def to_naive_jst(series: pd.Series) -> pd.Series:
@@ -238,6 +289,29 @@ def build_summary(all_posts: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def write_specs_sheet(ws) -> None:
+    """縦横を入れ替えて、項目ごとに5SNSを横並びで比較できるようにする。"""
+    columns = ["プラットフォーム", "データ取得範囲・遡れる期間", "コメント人数(unique_commenters)",
+               "表示回数・リーチ", "自動化レベル", "料金", "特記事項"]
+    header = ["項目"] + [spec["プラットフォーム"] for spec in PLATFORM_SPECS]
+    ws.append(header)
+    for col in columns[1:]:
+        ws.append([col] + [spec[col] for spec in PLATFORM_SPECS])
+
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+    ws.column_dimensions["A"].width = 22
+    for col_letter in "BCDEF":
+        ws.column_dimensions[col_letter].width = 42
+    for row_idx in range(2, ws.max_row + 1):
+        ws.row_dimensions[row_idx].height = 90
+    ws.row_dimensions[1].height = 18
+
+
 def autosize_columns(ws) -> None:
     for col_cells in ws.columns:
         length = max((len(str(c.value)) if c.value is not None else 0) for c in col_cells)
@@ -367,6 +441,10 @@ def main() -> None:
     from openpyxl import load_workbook
 
     wb = load_workbook(OUTPUT_PATH)
+
+    specs_ws = wb.create_sheet("SNS仕様比較", index=1)
+    write_specs_sheet(specs_ws)
+
     ws = wb["サマリー"]
     ws["A1"].font = Font(bold=True)
     for cell in ws[1]:
