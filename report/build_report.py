@@ -6,7 +6,7 @@ report/goriction_sns_report.xlsx が(既存があれば上書きで)作り直さ
 VBAマクロは使わず、毎回Pythonでゼロから作り直す方式にしているので、
 Excel起動時のマクロ有効化の警告も出ない。
 
-例外として「難易度評価」シートだけは、ユーザーが手入力した内容を
+例外として「曲別データ」シートだけは、ユーザーが手入力した内容を
 保持するために、実行のたびに前回の内容をそのまま引き継ぐ(消えない)。
 
 使い方:
@@ -33,11 +33,41 @@ OUTPUT_PATH = Path(__file__).parent / "goriction_sns_report.xlsx"
 
 # ここは他のシートと違い、実行するたびに作り直さず「手動入力を保持する」シート。
 # 曲ごとの難易度をユーザーが手で評価して残しておくためのもの。
-DIFFICULTY_SHEET_NAME = "難易度評価"
+DIFFICULTY_SHEET_NAME = "曲別データ"
+OLD_DIFFICULTY_SHEET_NAMES = ["難易度評価"]  # 改名前のシート名(移行用)
 # 一度でも自動提案した曲名の記録。ユーザーが行を削除・改名しても、
 # 同じハッシュタグ由来の曲名を次回以降に復活させないために使う。
 SUGGESTED_SONGS_PATH = Path(__file__).parent / "suggested_songs.json"
-DIFFICULTY_COLUMNS = ["曲名", "アーティスト", "感情", "高音", "音程", "テクニック", "平均", "メモ"]
+# 左側=手入力欄(実行しても保持)。「平均」は数式で毎回作り直す。
+MANUAL_COLUMNS = ["日付", "曲名", "アーティスト", "感情", "高音", "音程", "テクニック", "平均", "メモ"]
+RATING_COLUMNS = ["感情", "高音", "音程", "テクニック"]
+# 右側=SNSデータから毎回自動計算する欄。(列名, プラットフォーム, 投稿データの列)
+AUTO_METRICS = [
+    ("YouTube 再生", "YouTube", "views_or_impressions"),
+    ("YouTube いいね", "YouTube", "likes"),
+    ("YouTube コメント", "YouTube", "comments_raw"),
+    ("TikTok 再生", "TikTok", "views_or_impressions"),
+    ("TikTok いいね", "TikTok", "likes"),
+    ("TikTok コメント", "TikTok", "comments_raw"),
+    ("TikTok シェア", "TikTok", "shares"),
+    ("Instagram いいね", "Instagram", "likes"),
+    ("Instagram コメント", "Instagram", "comments_raw"),
+    ("X 表示", "X", "views_or_impressions"),
+    ("X いいね", "X", "likes"),
+    ("X リプライ", "X", "comments_raw"),
+    ("X リポスト", "X", "shares"),
+    ("Facebook 再生", "Facebook", "views_or_impressions"),
+    ("Facebook いいね", "Facebook", "likes"),
+    ("Facebook コメント", "Facebook", "comments_raw"),
+    ("Facebook シェア", "Facebook", "shares"),
+]
+# 合計・平均の対象。Xの「表示」は再生とは定義が違うので合計再生には含めない。
+TOTAL_GROUPS = [
+    ("再生", ["YouTube 再生", "TikTok 再生", "Facebook 再生"]),
+    ("いいね", ["YouTube いいね", "TikTok いいね", "Instagram いいね", "X いいね", "Facebook いいね"]),
+    ("コメント", ["YouTube コメント", "TikTok コメント", "Instagram コメント", "X リプライ", "Facebook コメント"]),
+    ("シェア・リポスト", ["TikTok シェア", "X リポスト", "Facebook シェア"]),
+]
 
 # 「歌ってみた」投稿のハッシュタグから曲名・アーティストを推測するための
 # ベストエフォートな辞書。新しいアーティストが増えたら随時追加する。
@@ -172,6 +202,7 @@ COLUMNS = [
     "likes",
     "views_or_impressions",
     "comments_raw",
+    "shares",
     "unique_commenters",
     "permalink",
 ]
@@ -194,6 +225,7 @@ def load_youtube() -> pd.DataFrame:
             "likes": df["likes"],
             "views_or_impressions": df["views"],
             "comments_raw": df["comment_count_raw"],
+            "shares": pd.NA,
             "unique_commenters": df["unique_commenters"],
             "permalink": "https://www.youtube.com/watch?v=" + df["video_id"].astype(str),
             "_sort_key": posted_at,
@@ -226,6 +258,7 @@ def load_tiktok() -> pd.DataFrame:
             "likes": df["likes"],
             "views_or_impressions": df["views"],
             "comments_raw": df["comment_count_raw"],
+            "shares": df["shares"],
             "unique_commenters": df["unique_commenters"],
             "permalink": df["video_url"],
             "_sort_key": sort_key,
@@ -250,6 +283,7 @@ def load_instagram() -> pd.DataFrame:
             "likes": df["like_count"],
             "views_or_impressions": pd.NA,  # インサイト未実装のため表示回数は取得できていない
             "comments_raw": df["comment_count_raw"],
+            "shares": pd.NA,
             "unique_commenters": df["unique_commenters"],
             "permalink": df["permalink"],
             "_sort_key": posted_at,
@@ -274,6 +308,7 @@ def load_x() -> pd.DataFrame:
             "likes": df["like_count"],
             "views_or_impressions": df["impression_count"],
             "comments_raw": df["reply_count_raw"],
+            "shares": df["retweet_count"],  # リポスト数
             "unique_commenters": df["unique_commenters"],
             "permalink": df["permalink"],
             "_sort_key": posted_at,
@@ -292,10 +327,11 @@ def load_facebook() -> pd.DataFrame:
     snapshots_path = ROOT / "facebook" / "exports" / "post_snapshots.csv"
     if snapshots_path.exists():
         snapshots = pd.read_csv(snapshots_path).drop_duplicates(subset="post_id", keep="last")
-        posts = posts.merge(snapshots[["post_id", "reactions", "comments"]], on="post_id", how="left")
+        posts = posts.merge(snapshots[["post_id", "reactions", "comments", "shares"]], on="post_id", how="left")
     else:
         posts["reactions"] = pd.NA
         posts["comments"] = pd.NA
+        posts["shares"] = pd.NA
 
     # ReelはpostsとReels一覧の両方に出てくるので、reel_idをURLから拾って
     # video_insightsの再生数(blue_reels_play_count)をviews_or_impressionsに載せる
@@ -324,6 +360,7 @@ def load_facebook() -> pd.DataFrame:
             "likes": posts["reactions"],
             "views_or_impressions": posts["blue_reels_play_count"],  # Reel以外の投稿は空欄
             "comments_raw": posts["comments"],
+            "shares": posts["shares"],
             "unique_commenters": pd.NA,  # 未実装(コメント投稿者の識別は未対応)
             "permalink": posts["url"],
             "_sort_key": posted_at,
@@ -380,96 +417,93 @@ def write_specs_sheet(ws) -> None:
     ws.row_dimensions[1].height = 18
 
 
-def snapshot_difficulty_sheet() -> dict | None:
-    """再生成でExcelファイルを上書きする前に、既存の「難易度評価」シートを
-    丸ごと(数式・書式込みで)メモリに退避しておく。無ければNoneを返す。"""
+def snapshot_difficulty_sheet() -> list[dict] | None:
+    """再生成でExcelファイルを上書きする前に、既存の曲別データ(旧:難易度評価)シートの
+    手入力欄を列名ベースで退避する。列の並びが変わっても列名で引き継げる。"""
     if not OUTPUT_PATH.exists():
         return None
     try:
         old_wb = load_workbook(OUTPUT_PATH)
     except Exception as e:
-        print(f"既存レポートの読み込みに失敗したで({e})。難易度評価シートは新規作成するで。")
+        print(f"既存レポートの読み込みに失敗したで({e})。{DIFFICULTY_SHEET_NAME}シートは新規作成するで。")
         return None
-    if DIFFICULTY_SHEET_NAME not in old_wb.sheetnames:
-        return None
-
-    old_ws = old_wb[DIFFICULTY_SHEET_NAME]
-    cells = []
-    for row in old_ws.iter_rows():
-        cells.append(
-            [
-                {
-                    "value": cell.value,
-                    "number_format": cell.number_format,
-                    "font": copy(cell.font),
-                    "alignment": copy(cell.alignment),
-                    "fill": copy(cell.fill),
-                    "border": copy(cell.border),
-                }
-                for cell in row
-            ]
-        )
-
-    header = [c["value"] for c in cells[0]] if cells else []
-    if header != DIFFICULTY_COLUMNS:
-        print(
-            f"{DIFFICULTY_SHEET_NAME}シートの列構成が変わった(旧:{header})ため、"
-            "既存の内容を引き継がず作り直すで。必要なら旧シートの中身を手動で移してな。"
-        )
+    name = next(
+        (n for n in [DIFFICULTY_SHEET_NAME, *OLD_DIFFICULTY_SHEET_NAMES] if n in old_wb.sheetnames), None
+    )
+    if name is None:
         return None
 
-    col_widths = {
-        letter: dim.width for letter, dim in old_ws.column_dimensions.items() if dim.width
-    }
-    print(f"既存の{DIFFICULTY_SHEET_NAME}シートを保持するで({len(cells) - 1}曲分)。")
-    return {"cells": cells, "col_widths": col_widths}
+    rows = list(old_wb[name].iter_rows(values_only=True))
+    if not rows:
+        return None
+    header = list(rows[0])
+    keep = [c for c in MANUAL_COLUMNS if c in header and c != "平均"]
+    records = []
+    for values in rows[1:]:
+        rec = {c: values[header.index(c)] for c in keep}
+        if any(v not in (None, "") for v in rec.values()):
+            records.append(rec)
+    print(f"既存の{name}シートの手入力欄を保持するで({len(records)}曲分)。")
+    return records
 
 
-def restore_difficulty_sheet(wb, snapshot: dict | None, song_candidates: list[tuple[str, str]]) -> None:
+def _normalize(text) -> str:
+    return re.sub(r"[\s…]", "", str(text)).lower()
+
+
+def match_song(caption, song_keys: list[tuple[str, str]]) -> str | None:
+    """キャプションに曲名が含まれていれば、その曲に紐付ける(長い曲名を優先)。
+    ハッシュタグでもタイトル文字列でも、空白・…・大小文字を無視して部分一致で判定する。"""
+    text = _normalize(caption)
+    for song, key in song_keys:
+        if key and key in text:
+            return song
+    return None
+
+
+def song_metrics(all_posts: pd.DataFrame, songs: list[str]) -> dict[str, dict]:
+    keys = sorted(((s, _normalize(s)) for s in songs), key=lambda x: -len(x[1]))
+    posts = all_posts.copy()
+    posts["_song"] = [match_song(c, keys) for c in posts["caption"]]
+    result = {}
+    for song in songs:
+        sub = posts[posts["_song"] == song]
+        m: dict = {"_first_posted": None, "_post_count": {}}
+        if not sub.empty:
+            first = pd.to_datetime(sub["_sort_key"], errors="coerce").min()
+            m["_first_posted"] = None if pd.isna(first) else first.date()
+        for label, platform, col in AUTO_METRICS:
+            vals = pd.to_numeric(sub.loc[sub["platform"] == platform, col], errors="coerce").dropna()
+            m[label] = None if vals.empty else int(vals.sum())
+            m["_post_count"][label] = len(vals)
+        result[song] = m
+    unmatched = posts[posts["_song"].isna() & posts["caption"].astype(str).str.contains("歌ってみた")]
+    if not unmatched.empty:
+        print(f"曲に紐付けられなかった「歌ってみた」投稿が{len(unmatched)}件あるで:")
+        for _, r in unmatched.iterrows():
+            print(f"  - {r['platform']} {str(r['posted_at'])[:10]} {str(r['caption'])[:30]!r}")
+    return result
+
+
+def restore_difficulty_sheet(wb, snapshot: list[dict] | None, song_candidates: list[tuple[str, str]],
+                             all_posts: pd.DataFrame) -> None:
     ws = wb.create_sheet(DIFFICULTY_SHEET_NAME, index=2)
-    RATING_COLS = "CDEF"  # 感情・高音・音程・テクニック
-
-    if snapshot is None:
-        ws.append(DIFFICULTY_COLUMNS)
-        for cell in ws[1]:
-            cell.font = Font(bold=True)
-        existing_songs: set[str] = set()
-        next_row = 2
-    else:
-        for r_idx, row_data in enumerate(snapshot["cells"], start=1):
-            for c_idx, cell_info in enumerate(row_data, start=1):
-                cell = ws.cell(row=r_idx, column=c_idx, value=cell_info["value"])
-                cell.number_format = cell_info["number_format"]
-                cell.font = cell_info["font"]
-                cell.alignment = cell_info["alignment"]
-                cell.fill = cell_info["fill"]
-                cell.border = cell_info["border"]
-        for letter, width in snapshot["col_widths"].items():
-            ws.column_dimensions[letter].width = width
-        existing_songs = {
-            row[0]["value"] for row in snapshot["cells"][1:] if row and row[0]["value"]
-        }
-        next_row = len(snapshot["cells"]) + 1
+    records = list(snapshot or [])
+    existing_songs = {r.get("曲名") for r in records if r.get("曲名")}
 
     # ハッシュタグから拾った新曲だけ追加する(評価欄は空欄のまま=未評価として残す)。
     # 過去に一度提案した曲は、ユーザーが削除・改名していても再追加しない。
     if SUGGESTED_SONGS_PATH.exists():
         suggested = set(json.loads(SUGGESTED_SONGS_PATH.read_text(encoding="utf-8")))
     elif snapshot is not None:
-        # 記録ファイル導入前から手入力されているシートの場合、現時点の候補はすべて
-        # 「提案済み」とみなす(既に削除・改名された曲を復活させないため)。
         suggested = {song for song, _ in song_candidates}
     else:
         suggested = set()
-
     added = 0
     for song, artist in song_candidates:
         if song in existing_songs or song in suggested:
             continue
-        ws.cell(row=next_row, column=1, value=song)
-        ws.cell(row=next_row, column=2, value=artist)
-        ws.cell(row=next_row, column=7, value=f"=IFERROR(AVERAGE(C{next_row}:F{next_row}),\"\")")
-        next_row += 1
+        records.append({"曲名": song, "アーティスト": artist})
         added += 1
     if added:
         print(f"{DIFFICULTY_SHEET_NAME}シートに新曲を{added}件追加したで(評価はまだ未入力)。")
@@ -478,31 +512,66 @@ def restore_difficulty_sheet(wb, snapshot: dict | None, song_candidates: list[tu
         json.dumps(sorted(suggested), ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    if snapshot is None:
-        # 初回のみ、書式の参考になる記入例を1行入れる
-        ws.append(["(例)ダーリン 18祭Ver", "Mrs. GREEN APPLE", 3, 4, 3, 3, "=AVERAGE(C2:F2)", "サビで高音が続く。これは例なので消してOK"])
+    metrics = song_metrics(all_posts, [r["曲名"] for r in records if r.get("曲名")])
 
-    for cell in ws[1]:
+    auto_cols = [label for label, _, _ in AUTO_METRICS]
+    total_cols = [f"合計{name}" for name, _ in TOTAL_GROUPS]
+    avg_cols = [f"平均{name}(1投稿あたり)" for name, _ in TOTAL_GROUPS]
+    header = MANUAL_COLUMNS + auto_cols + total_cols + avg_cols
+    ws.append(header)
+    col = {name: i + 1 for i, name in enumerate(header)}
+    letter = {name: get_column_letter(i) for name, i in col.items()}
+
+    for r_idx, rec in enumerate(records, start=2):
+        m = metrics.get(rec.get("曲名"), {})
+        # 日付は手入力が無ければ、その曲の最初の投稿日を自動で入れる
+        if not rec.get("日付") and m.get("_first_posted"):
+            rec["日付"] = m["_first_posted"]
+        for name in MANUAL_COLUMNS:
+            if name != "平均":
+                ws.cell(r_idx, col[name], rec.get(name))
+        rating_range = f"{letter['感情']}{r_idx}:{letter['テクニック']}{r_idx}"
+        ws.cell(r_idx, col["平均"], f'=IFERROR(AVERAGE({rating_range}),"")')
+        for label in auto_cols:
+            ws.cell(r_idx, col[label], m.get(label))
+        for (name, members), tcol, acol in zip(TOTAL_GROUPS, total_cols, avg_cols):
+            vals = [m[x] for x in members if m.get(x) is not None]
+            posts_n = sum(m.get("_post_count", {}).get(x, 0) for x in members)
+            ws.cell(r_idx, col[tcol], sum(vals) if vals else None)
+            ws.cell(r_idx, col[acol], round(sum(vals) / posts_n, 1) if posts_n else None)
+        ws.cell(r_idx, col["日付"]).number_format = "yyyy-mm-dd"
+
+    manual_fill = PatternFill(start_color="E8F0FE", end_color="E8F0FE", fill_type="solid")
+    total_fill = PatternFill(start_color="EDEDED", end_color="EDEDED", fill_type="solid")
+    for name, idx in col.items():
+        cell = ws.cell(1, idx)
         cell.font = Font(bold=True)
-    ws.column_dimensions["A"].width = 26
-    ws.column_dimensions["B"].width = 18
-    for col_letter in RATING_COLS:
-        ws.column_dimensions[col_letter].width = 8
-    ws.column_dimensions["G"].width = 8
-    ws.column_dimensions["H"].width = 40
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+        if name in MANUAL_COLUMNS:
+            cell.fill = manual_fill
+        elif name in total_cols or name in avg_cols:
+            cell.fill = total_fill
+        ws.column_dimensions[letter[name]].width = 9
+    ws.column_dimensions[letter["日付"]].width = 11
+    ws.column_dimensions[letter["曲名"]].width = 22
+    ws.column_dimensions[letter["アーティスト"]].width = 17
+    ws.column_dimensions[letter["メモ"]].width = 30
+    ws.row_dimensions[1].height = 32
+    ws.freeze_panes = ws.cell(2, col["感情"])
 
-    # 感情・高音・音程・テクニック列に1〜5のドロップダウンを付ける
+    first, last = letter[RATING_COLUMNS[0]], letter[RATING_COLUMNS[-1]]
     dv = DataValidation(type="whole", operator="between", formula1=1, formula2=5, allow_blank=True)
     dv.error = "1〜5の数値を入力してください"
     dv.errorTitle = "入力エラー"
     ws.add_data_validation(dv)
-    dv.add(f"{RATING_COLS[0]}2:{RATING_COLS[-1]}1000")
+    dv.add(f"{first}2:{last}1000")
 
-    # 感情〜テクニックが全部未入力の行は、目立つよう黄色でハイライトする
+    # 感情〜テクニックが全部未入力の行は、手入力欄を黄色でハイライトする
     warn_fill = PatternFill(start_color="FFF3CD", end_color="FFF3CD", fill_type="solid")
+    song = letter["曲名"]
     ws.conditional_formatting.add(
-        "A2:H1000",
-        FormulaRule(formula=["COUNTBLANK($C2:$F2)=4"], fill=warn_fill),
+        f"A2:{letter['メモ']}1000",
+        FormulaRule(formula=[f'AND(${song}2<>"",COUNTBLANK(${first}2:${last}2)=4)'], fill=warn_fill),
     )
 
 
@@ -629,7 +698,7 @@ def main() -> None:
                     "YouTube/TikTokの再生回数とXのインプレッション(表示回数)は測定定義が異なる目安値。",
                     "Facebookは通常投稿に表示回数が無く、Reel投稿のみvideo_insightsの再生数(blue_reels_play_count)を表示回数欄に入れている。unique_commentersは未実装(常に空欄)。",
                     "このExcelはfetch時点のスナップショット。日々の推移を追うには過去分を別途残す必要がある。",
-                    "「難易度評価」シートだけは手入力保持用のため、再実行してもリセットされない。",
+                    "「曲別データ」シートだけは手入力保持用のため、再実行してもリセットされない。",
                 ]
             }
         )
@@ -641,7 +710,7 @@ def main() -> None:
     write_specs_sheet(specs_ws)
 
     song_candidates = collect_song_candidates(all_posts)
-    restore_difficulty_sheet(wb, difficulty_snapshot, song_candidates)
+    restore_difficulty_sheet(wb, difficulty_snapshot, song_candidates, all_posts)
 
     ws = wb["サマリー"]
     ws["A1"].font = Font(bold=True)
