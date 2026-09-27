@@ -1,5 +1,5 @@
 @echo off
-REM Updates TikTok, YouTube, Instagram, X, then rebuilds the combined Excel report.
+REM Updates TikTok, YouTube, Instagram, X, Facebook, then rebuilds the combined Excel report.
 REM Runs even if there is no new TikTok zip in Downloads (that step just skips).
 
 chcp 65001 >nul
@@ -74,6 +74,22 @@ if not exist x\fetch.py (
     goto :error
 )
 pushd x
+.venv\Scripts\python fetch.py
+if errorlevel 1 (
+    popd
+    goto :error
+)
+popd
+
+echo.
+echo === Updating Facebook ===
+REM First run needs a one-time browser authorization; later runs reuse the
+REM saved page access token in facebook\secrets\token_cache.json without a browser step.
+if not exist facebook\fetch.py (
+    echo facebook\fetch.py not found.
+    goto :error
+)
+pushd facebook
 .venv\Scripts\python fetch.py
 if errorlevel 1 (
     popd

@@ -1,5 +1,5 @@
 """
-YouTube/TikTok/Instagram/Xの各exports CSVを1つのExcelにまとめる。
+YouTube/TikTok/Instagram/X/Facebookの各exports CSVを1つのExcelにまとめる。
 
 各SNSのfetchスクリプトを実行した後にこれを実行すると、
 report/goriction_sns_report.xlsx が(既存があれば上書きで)作り直される。
@@ -163,9 +163,62 @@ def load_x() -> pd.DataFrame:
     return out
 
 
+def load_facebook() -> pd.DataFrame:
+    posts_path = ROOT / "facebook" / "exports" / "posts.csv"
+    if not posts_path.exists():
+        print("facebook: exports/posts.csv が見つからんかった。スキップするで。")
+        return pd.DataFrame(columns=ALL_COLUMNS)
+
+    posts = pd.read_csv(posts_path)
+    snapshots_path = ROOT / "facebook" / "exports" / "post_snapshots.csv"
+    if snapshots_path.exists():
+        snapshots = pd.read_csv(snapshots_path).drop_duplicates(subset="post_id", keep="last")
+        posts = posts.merge(snapshots[["post_id", "reactions", "comments"]], on="post_id", how="left")
+    else:
+        posts["reactions"] = pd.NA
+        posts["comments"] = pd.NA
+
+    # ReelはpostsとReels一覧の両方に出てくるので、reel_idをURLから拾って
+    # video_insightsの再生数(blue_reels_play_count)をviews_or_impressionsに載せる
+    posts["_reel_id"] = posts["url"].astype(str).str.extract(r"/reel/(\d+)/?")
+    reel_snapshots_path = ROOT / "facebook" / "exports" / "reel_snapshots.csv"
+    if reel_snapshots_path.exists():
+        reel_snapshots = pd.read_csv(reel_snapshots_path)
+        if "blue_reels_play_count" in reel_snapshots.columns:
+            reel_snapshots = reel_snapshots.drop_duplicates(subset="reel_id", keep="last")
+            reel_snapshots = reel_snapshots.rename(columns={"reel_id": "_reel_id"})
+            reel_snapshots["_reel_id"] = reel_snapshots["_reel_id"].astype(str)
+            posts = posts.merge(
+                reel_snapshots[["_reel_id", "blue_reels_play_count"]], on="_reel_id", how="left"
+            )
+    if "blue_reels_play_count" not in posts.columns:
+        posts["blue_reels_play_count"] = pd.NA
+
+    posted_at = to_naive_jst(pd.to_datetime(posts["published_at"], errors="coerce", utc=True))
+    caption = posts["message"].fillna(posts["type"])  # 写真投稿等で本文が空の場合は種類を仮キャプションにする
+    out = pd.DataFrame(
+        {
+            "platform": "Facebook",
+            "posted_at": posted_at,
+            "label": make_label(posted_at.dt.strftime("%m/%d"), caption),
+            "caption": caption,
+            "likes": posts["reactions"],
+            "views_or_impressions": posts["blue_reels_play_count"],  # Reel以外の投稿は空欄
+            "comments_raw": posts["comments"],
+            "unique_commenters": pd.NA,  # 未実装(コメント投稿者の識別は未対応)
+            "permalink": posts["url"],
+            "_sort_key": posted_at,
+        }
+    )
+    return out
+
+
+PLATFORMS = ["YouTube", "TikTok", "Instagram", "X", "Facebook"]
+
+
 def build_summary(all_posts: pd.DataFrame) -> pd.DataFrame:
     rows = []
-    for platform in ["YouTube", "TikTok", "Instagram", "X"]:
+    for platform in PLATFORMS:
         sub = all_posts[all_posts["platform"] == platform]
         if sub.empty:
             continue
@@ -272,11 +325,12 @@ PLATFORM_COLORS = {
     "TikTok": "eb6834",
     "Instagram": "1baf7a",
     "X": "eda100",
+    "Facebook": "e87ba4",
 }
 
 
 def main() -> None:
-    frames = [load_youtube(), load_tiktok(), load_instagram(), load_x()]
+    frames = [load_youtube(), load_tiktok(), load_instagram(), load_x(), load_facebook()]
     all_posts = pd.concat(frames, ignore_index=True)[ALL_COLUMNS]
 
     if all_posts.empty:
@@ -288,7 +342,7 @@ def main() -> None:
     with pd.ExcelWriter(OUTPUT_PATH, engine="openpyxl") as writer:
         summary.to_excel(writer, sheet_name="サマリー", index=False)
 
-        for platform in ["YouTube", "TikTok", "Instagram", "X"]:
+        for platform in PLATFORMS:
             sub = all_posts[all_posts["platform"] == platform].copy()
             if sub.empty:
                 continue
@@ -303,6 +357,7 @@ def main() -> None:
                     "Xのリプライ取得は直近7日以内が対象。7日より前の投稿はunique_commentersが過小(0)になりうる。",
                     "TikTokの投稿日は年情報が無いため文字列のまま保持している(年跨ぎで誤認しないよう注意)。",
                     "YouTube/TikTokの再生回数とXのインプレッション(表示回数)は測定定義が異なる目安値。",
+                    "Facebookは通常投稿に表示回数が無く、Reel投稿のみvideo_insightsの再生数(blue_reels_play_count)を表示回数欄に入れている。unique_commentersは未実装(常に空欄)。",
                     "このExcelはfetch時点のスナップショット。日々の推移を追うには過去分を別途残す必要がある。",
                 ]
             }
@@ -323,7 +378,7 @@ def main() -> None:
     add_bar_chart(ws, len(summary), value_col=3, title="合計いいね", anchor=f"A{chart_start_row + 18}")
     add_bar_chart(ws, len(summary), value_col=4, title="合計再生/表示回数", anchor=f"A{chart_start_row + 36}")
 
-    for platform in ["YouTube", "TikTok", "Instagram", "X"]:
+    for platform in PLATFORMS:
         if platform not in wb.sheetnames:
             continue
         psheet = wb[platform]
