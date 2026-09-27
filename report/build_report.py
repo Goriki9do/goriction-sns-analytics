@@ -6,22 +6,82 @@ report/goriction_sns_report.xlsx が(既存があれば上書きで)作り直さ
 VBAマクロは使わず、毎回Pythonでゼロから作り直す方式にしているので、
 Excel起動時のマクロ有効化の警告も出ない。
 
+例外として「難易度評価」シートだけは、ユーザーが手入力した内容を
+保持するために、実行のたびに前回の内容をそのまま引き継ぐ(消えない)。
+
 使い方:
     python build_report.py
 """
 
 import re
 import sys
+from copy import copy
 from pathlib import Path
 
 import pandas as pd
+from openpyxl import load_workbook
 from openpyxl.chart import BarChart, Reference
 from openpyxl.chart.label import DataLabelList
-from openpyxl.styles import Alignment, Font
+from openpyxl.formatting.rule import FormulaRule
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 
 ROOT = Path(__file__).parent.parent
 OUTPUT_PATH = Path(__file__).parent / "goriction_sns_report.xlsx"
+
+# ここは他のシートと違い、実行するたびに作り直さず「手動入力を保持する」シート。
+# 曲ごとの難易度をユーザーが手で評価して残しておくためのもの。
+DIFFICULTY_SHEET_NAME = "難易度評価"
+DIFFICULTY_COLUMNS = ["曲名", "アーティスト", "感情", "高音", "音程", "テクニック", "平均", "メモ"]
+
+# 「歌ってみた」投稿のハッシュタグから曲名・アーティストを推測するための
+# ベストエフォートな辞書。新しいアーティストが増えたら随時追加する。
+GENERIC_HASHTAGS = {"歌ってみた", "手書き", "イラスト", "描いてみた", "練習", "絵", "漫画", "AI漫画"}
+KNOWN_ARTIST_HASHTAGS = {
+    "mrsgreenapple": "Mrs. GREEN APPLE",
+    "ミセスグリーンアップル": "Mrs. GREEN APPLE",
+    "優里": "優里",
+    "バックナンバー": "back number",
+    "backnumber": "back number",
+    "exile": "EXILE",
+    "久保田利伸": "久保田利伸",
+    "official髭男dism": "Official髭男dism",
+}
+
+
+def extract_song_from_caption(caption) -> tuple[str, str] | None:
+    """キャプションのハッシュタグから(曲名, アーティスト)を推測する(ベストエフォート)。
+    「歌ってみた」が含まれない投稿(イラスト等)や、ハッシュタグが無い投稿(プレーン
+    テキストのYouTubeタイトル等)は対象外。"""
+    text = str(caption)
+    if "歌ってみた" not in text:
+        return None
+    tags = re.findall(r"#([^\s#]+)", text)
+    if not tags:
+        return None
+    artist = ""
+    song = ""
+    for tag in tags:
+        key = tag.lower()
+        if key in KNOWN_ARTIST_HASHTAGS:
+            artist = artist or KNOWN_ARTIST_HASHTAGS[key]
+        elif tag not in GENERIC_HASHTAGS:
+            song = song or tag
+    return (song, artist) if song else None
+
+
+def collect_song_candidates(all_posts: pd.DataFrame) -> list[tuple[str, str]]:
+    """全投稿から曲名候補を集める。同じ曲名が複数プラットフォームに出てきたら1件にまとめる。"""
+    songs: dict[str, str] = {}
+    for caption in all_posts["caption"]:
+        result = extract_song_from_caption(caption)
+        if result is None:
+            continue
+        song, artist = result
+        if song not in songs or (not songs[song] and artist):
+            songs[song] = artist
+    return sorted(songs.items())
 
 # 各SNSのREADME・Notion引き継ぎ資料に書かれている制約を集約した一覧。
 # 実装したfetchスクリプトの挙動から分かっている内容を手書きでまとめたもの
@@ -312,6 +372,118 @@ def write_specs_sheet(ws) -> None:
     ws.row_dimensions[1].height = 18
 
 
+def snapshot_difficulty_sheet() -> dict | None:
+    """再生成でExcelファイルを上書きする前に、既存の「難易度評価」シートを
+    丸ごと(数式・書式込みで)メモリに退避しておく。無ければNoneを返す。"""
+    if not OUTPUT_PATH.exists():
+        return None
+    try:
+        old_wb = load_workbook(OUTPUT_PATH)
+    except Exception as e:
+        print(f"既存レポートの読み込みに失敗したで({e})。難易度評価シートは新規作成するで。")
+        return None
+    if DIFFICULTY_SHEET_NAME not in old_wb.sheetnames:
+        return None
+
+    old_ws = old_wb[DIFFICULTY_SHEET_NAME]
+    cells = []
+    for row in old_ws.iter_rows():
+        cells.append(
+            [
+                {
+                    "value": cell.value,
+                    "number_format": cell.number_format,
+                    "font": copy(cell.font),
+                    "alignment": copy(cell.alignment),
+                    "fill": copy(cell.fill),
+                    "border": copy(cell.border),
+                }
+                for cell in row
+            ]
+        )
+
+    header = [c["value"] for c in cells[0]] if cells else []
+    if header != DIFFICULTY_COLUMNS:
+        print(
+            f"{DIFFICULTY_SHEET_NAME}シートの列構成が変わった(旧:{header})ため、"
+            "既存の内容を引き継がず作り直すで。必要なら旧シートの中身を手動で移してな。"
+        )
+        return None
+
+    col_widths = {
+        letter: dim.width for letter, dim in old_ws.column_dimensions.items() if dim.width
+    }
+    print(f"既存の{DIFFICULTY_SHEET_NAME}シートを保持するで({len(cells) - 1}曲分)。")
+    return {"cells": cells, "col_widths": col_widths}
+
+
+def restore_difficulty_sheet(wb, snapshot: dict | None, song_candidates: list[tuple[str, str]]) -> None:
+    ws = wb.create_sheet(DIFFICULTY_SHEET_NAME, index=2)
+    RATING_COLS = "CDEF"  # 感情・高音・音程・テクニック
+
+    if snapshot is None:
+        ws.append(DIFFICULTY_COLUMNS)
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+        existing_songs: set[str] = set()
+        next_row = 2
+    else:
+        for r_idx, row_data in enumerate(snapshot["cells"], start=1):
+            for c_idx, cell_info in enumerate(row_data, start=1):
+                cell = ws.cell(row=r_idx, column=c_idx, value=cell_info["value"])
+                cell.number_format = cell_info["number_format"]
+                cell.font = cell_info["font"]
+                cell.alignment = cell_info["alignment"]
+                cell.fill = cell_info["fill"]
+                cell.border = cell_info["border"]
+        for letter, width in snapshot["col_widths"].items():
+            ws.column_dimensions[letter].width = width
+        existing_songs = {
+            row[0]["value"] for row in snapshot["cells"][1:] if row and row[0]["value"]
+        }
+        next_row = len(snapshot["cells"]) + 1
+
+    # ハッシュタグから拾った新曲だけ追加する(評価欄は空欄のまま=未評価として残す)
+    added = 0
+    for song, artist in song_candidates:
+        if song in existing_songs:
+            continue
+        ws.cell(row=next_row, column=1, value=song)
+        ws.cell(row=next_row, column=2, value=artist)
+        ws.cell(row=next_row, column=7, value=f"=IFERROR(AVERAGE(C{next_row}:F{next_row}),\"\")")
+        next_row += 1
+        added += 1
+    if added:
+        print(f"{DIFFICULTY_SHEET_NAME}シートに新曲を{added}件追加したで(評価はまだ未入力)。")
+
+    if snapshot is None:
+        # 初回のみ、書式の参考になる記入例を1行入れる
+        ws.append(["(例)ダーリン 18祭Ver", "Mrs. GREEN APPLE", 3, 4, 3, 3, "=AVERAGE(C2:F2)", "サビで高音が続く。これは例なので消してOK"])
+
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    ws.column_dimensions["A"].width = 26
+    ws.column_dimensions["B"].width = 18
+    for col_letter in RATING_COLS:
+        ws.column_dimensions[col_letter].width = 8
+    ws.column_dimensions["G"].width = 8
+    ws.column_dimensions["H"].width = 40
+
+    # 感情・高音・音程・テクニック列に1〜5のドロップダウンを付ける
+    dv = DataValidation(type="whole", operator="between", formula1=1, formula2=5, allow_blank=True)
+    dv.error = "1〜5の数値を入力してください"
+    dv.errorTitle = "入力エラー"
+    ws.add_data_validation(dv)
+    dv.add(f"{RATING_COLS[0]}2:{RATING_COLS[-1]}1000")
+
+    # 感情〜テクニックが全部未入力の行は、目立つよう黄色でハイライトする
+    warn_fill = PatternFill(start_color="FFF3CD", end_color="FFF3CD", fill_type="solid")
+    ws.conditional_formatting.add(
+        "A2:H1000",
+        FormulaRule(formula=["COUNTBLANK($C2:$F2)=4"], fill=warn_fill),
+    )
+
+
 def autosize_columns(ws) -> None:
     for col_cells in ws.columns:
         length = max((len(str(c.value)) if c.value is not None else 0) for c in col_cells)
@@ -413,6 +585,8 @@ def main() -> None:
 
     summary = build_summary(all_posts)
 
+    difficulty_snapshot = snapshot_difficulty_sheet()
+
     with pd.ExcelWriter(OUTPUT_PATH, engine="openpyxl") as writer:
         summary.to_excel(writer, sheet_name="サマリー", index=False)
 
@@ -433,17 +607,19 @@ def main() -> None:
                     "YouTube/TikTokの再生回数とXのインプレッション(表示回数)は測定定義が異なる目安値。",
                     "Facebookは通常投稿に表示回数が無く、Reel投稿のみvideo_insightsの再生数(blue_reels_play_count)を表示回数欄に入れている。unique_commentersは未実装(常に空欄)。",
                     "このExcelはfetch時点のスナップショット。日々の推移を追うには過去分を別途残す必要がある。",
+                    "「難易度評価」シートだけは手入力保持用のため、再実行してもリセットされない。",
                 ]
             }
         )
         notes.to_excel(writer, sheet_name="サマリー", index=False, startrow=len(summary) + 3)
 
-    from openpyxl import load_workbook
-
     wb = load_workbook(OUTPUT_PATH)
 
     specs_ws = wb.create_sheet("SNS仕様比較", index=1)
     write_specs_sheet(specs_ws)
+
+    song_candidates = collect_song_candidates(all_posts)
+    restore_difficulty_sheet(wb, difficulty_snapshot, song_candidates)
 
     ws = wb["サマリー"]
     ws["A1"].font = Font(bold=True)
